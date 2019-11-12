@@ -89,10 +89,21 @@ const DevicesSection = ({devices, userId, loading}) => {
     );
 };
 
-function openDMForUser(cli, userId) {
+async function unverifyUser(matrixClient, userId) {
+    const devices = await matrixClient.getStoredDevicesForUser(userId);
+    for (const device of devices) {
+        if (device.isVerified()) {
+            matrixClient.setDeviceVerified(
+                userId, device.deviceId, false,
+            );
+        }
+    }
+}
+
+function openDMForUser(matrixClient, userId) {
     const dmRooms = DMRoomMap.shared().getDMRoomsForUserId(userId);
     const lastActiveRoom = dmRooms.reduce((lastActiveRoom, roomId) => {
-        const room = cli.getRoom(roomId);
+        const room = matrixClient.getRoom(roomId);
         if (!room || room.getMyMembership() === "leave") {
             return lastActiveRoom;
         }
@@ -112,7 +123,7 @@ function openDMForUser(cli, userId) {
     }
 }
 
-const UserOptionsSection = withLegacyMatrixClient(({matrixClient: cli, member, isIgnored, canInvite}) => {
+const UserOptionsSection = withLegacyMatrixClient(({matrixClient: cli, member, isIgnored, canInvite, devices}) => {
     let ignoreButton = null;
     let insertPillButton = null;
     let inviteUserButton = null;
@@ -222,6 +233,15 @@ const UserOptionsSection = withLegacyMatrixClient(({matrixClient: cli, member, i
             </AccessibleButton>
         );
     }
+    let unverifyButton;
+    // TODO: this doesn't seem to work
+    if (devices && devices.some(device => device.isVerified())) {
+        unverifyButton = (
+            <AccessibleButton onClick={() => unverifyUser(cli, member.userId)} className="mx_UserInfo_field">
+                { _t('Unverify user') }
+            </AccessibleButton>
+        );
+    }
 
     return (
         <div className="mx_UserInfo_container">
@@ -231,8 +251,9 @@ const UserOptionsSection = withLegacyMatrixClient(({matrixClient: cli, member, i
                 { readReceiptButton }
                 { shareUserButton }
                 { insertPillButton }
-                { ignoreButton }
                 { inviteUserButton }
+                { ignoreButton }
+                { unverifyButton }
             </div>
         </div>
     );
@@ -300,6 +321,18 @@ const useRoomPowerLevels = (room) => {
     }, [update]);
     return powerLevels;
 };
+
+function useIsEncrypted(cli, room) {
+    const [isEncrypted, setIsEncrypted] = useState({});
+
+    const update = useCallback(() => {
+        setIsEncrypted(cli.isRoomEncrypted(room.roomId));
+    }, [cli, room]);
+
+    useEventEmitter(room, "RoomState.events", update);
+    update();
+    return isEncrypted;
+}
 
 const RoomKickButton = withLegacyMatrixClient(({matrixClient: cli, member, startUpdating, stopUpdating}) => {
     const onKick = async () => {
@@ -1036,7 +1069,7 @@ const UserInfo = withLegacyMatrixClient(({matrixClient: cli, user, groupId, room
         return () => {
             cancelled = true;
         };
-    }, [cli, user.userId]);
+    }, [cli, user.userId, isEncrypted]);
 
     // Listen to changes
     useEffect(() => {
@@ -1062,7 +1095,7 @@ const UserInfo = withLegacyMatrixClient(({matrixClient: cli, user, groupId, room
     }, [cli, user.userId]);
 
     let devicesSection;
-    const isRoomEncrypted = _enableDevices && room && cli.isRoomEncrypted(room.roomId);
+    const isRoomEncrypted = useIsEncrypted(cli, room);
     if (isRoomEncrypted) {
         devicesSection = <DevicesSection loading={devices === undefined} devices={devices} userId={user.userId} />;
     } else {
@@ -1079,10 +1112,8 @@ const UserInfo = withLegacyMatrixClient(({matrixClient: cli, user, groupId, room
         if (text) {
             devicesSection = (
                 <div className="mx_UserInfo_container">
-                    <h3>{ _t("Trust & Devices") }</h3>
-                    <div className="mx_UserInfo_devices">
-                        { text }
-                    </div>
+                    <h3>{ _t("Security") }</h3>
+                    <p>{ text }</p>
                 </div>
             );
         }
@@ -1123,6 +1154,7 @@ const UserInfo = withLegacyMatrixClient(({matrixClient: cli, user, groupId, room
             <AutoHideScrollbar className="mx_UserInfo_scrollContainer">
                 { devicesSection }
                 <UserOptionsSection
+                    device={devices}
                     canInvite={roomPermissions.canInvite}
                     isIgnored={isIgnored}
                     member={user} />
