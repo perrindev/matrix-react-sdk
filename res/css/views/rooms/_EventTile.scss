@@ -458,6 +458,65 @@ div.mx_EventTile_notSent.mx_EventTile_redacted .mx_UnknownBody {
     cursor: pointer;
 }
 
+/* overrides for mx_EventTile_OwnMessage (11/12/2019) */
+.mx_EventTile.mx_EventTile_OwnMessage {
+    max-width: 100%;
+    clear: both;
+    padding-top: 18px;
+    font-size: 14px;
+    position: relative;
+
+    .mx_SenderProfile {
+        right: 65px;
+        padding: 0px;
+        width: 100%;
+        text-align: right;
+    }
+
+    .mx_EventTile_avatar {
+        left: unset;
+        right: 8px;
+    }
+
+    .mx_MessageActionBar {
+        right: unset;
+        left: 8px;
+    }
+
+    .mx_MTextBody {
+        text-align: right;
+        margin-right: 0px;
+        margin-left: 34px;
+    }
+
+    .mx_EventTile_line {
+        // margin-left: 65px;
+        margin-right: 0px;
+        padding-right: 65px;
+        padding-left: 0px;
+    }
+
+    .mx_MessageTimestamp {
+        left: unset;
+        right: 0px;
+    }
+
+    .mx_MImageBody {
+        margin-right: 0px;
+        margin-left: 34px;
+    }
+
+    .mx_MFileBody_download {
+        text-align: right;
+    }
+
+    .mx_ReactionsRowButton {
+        float: right;
+        margin-right: 0px;
+        margin-left: 6px;
+    }
+}
+
 /* Various markdown overrides */
 
 .mx_EventTile_body pre {

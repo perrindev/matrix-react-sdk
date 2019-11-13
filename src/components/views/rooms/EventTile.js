@@ -591,7 +591,7 @@ module.exports = createReactClass({
         const isEncryptionFailure = this.props.mxEvent.isDecryptionFailure();
 
         const isEditing = !!this.props.editState;
-        const classes = classNames({
+        const classBuilder = {
             mx_EventTile_bubbleContainer: isBubbleMessage,
             mx_EventTile: true,
             mx_EventTile_isEditing: isEditing,
@@ -611,7 +611,21 @@ module.exports = createReactClass({
             mx_EventTile_bad: isEncryptionFailure,
             mx_EventTile_emote: msgtype === 'm.emote',
             mx_EventTile_redacted: isRedacted,
-        });
+        };
+
+        // perrin modification - 11/12/2019
+        // start
+        const client = MatrixClientPeg.get();
+        const me = client && client.getUserId();
+        if (this.props.mxEvent && tileHandler && this.props.mxEvent.sender 
+            && this.props.mxEvent.sender.userId 
+            && me === this.props.mxEvent.sender.userId
+            && tileHandler === eventTileTypes['m.room.message']) {
+                classBuilder.mx_EventTile_OwnMessage = true;
+        }
+        // end
+
+        const classes = classNames(classBuilder);
 
         let permalink = "#";
         if (this.props.permalinkCreator) {

@@ -54,3 +54,8 @@ limitations under the License.
         right: 0;
     }
 }
+
+/* overrides report button */
+.mx_TagPanelButtons > .mx_TagPanelButtons_report {
+    display: none !important;
+}
