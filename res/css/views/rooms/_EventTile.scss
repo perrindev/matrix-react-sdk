@@ -490,10 +490,9 @@ div.mx_EventTile_notSent.mx_EventTile_redacted .mx_UnknownBody {
     }
 
     .mx_EventTile_line {
-        // margin-left: 65px;
         margin-right: 0px;
         padding-right: 65px;
-        padding-left: 0px;
+        margin-left: 110px;
     }
 
     .mx_MessageTimestamp {
@@ -514,6 +513,25 @@ div.mx_EventTile_notSent.mx_EventTile_redacted .mx_UnknownBody {
         float: right;
         margin-right: 0px;
         margin-left: 6px;
+    }
+
+    .mx_ReactionsRowButton {
+        float: right;
+        margin-right: 0px;
+        margin-left: 6px;
+    }
+
+    .mx_EventTile_msgOption {
+        float: left;
+        text-align: left;
+        margin-right: 0px;
+        margin-left: 10px;
+    }
+
+    .mx_EventTile_readAvatars {
+        left: 0px;
+        position: absolute;
+        right: unset;
     }
 }
 
