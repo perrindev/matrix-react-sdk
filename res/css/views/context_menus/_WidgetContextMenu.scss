@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The Matrix.org Foundation C.I.C.
+Copyright 2019 The Matrix.org Foundaction C.I.C.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,11 +14,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-import SettingController from "./SettingController";
-import PlatformPeg from "../../PlatformPeg";
+.mx_WidgetContextMenu {
+    padding: 6px;
 
-export default class LowBandwidthController extends SettingController {
-    onChange(level, roomId, newValue) {
-        PlatformPeg.get().reload();
+    .mx_WidgetContextMenu_option {
+        padding: 3px 6px 3px 6px;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .mx_WidgetContextMenu_separator {
+        margin-top: 0;
+        margin-bottom: 0;
+        border-bottom-style: none;
+        border-left-style: none;
+        border-right-style: none;
+        border-top-style: solid;
+        border-top-width: 1px;
+        border-color: $menu-border-color;
     }
 }
