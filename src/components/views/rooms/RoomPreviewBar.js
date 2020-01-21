@@ -19,8 +19,8 @@ limitations under the License.
 import React from 'react';
 import PropTypes from 'prop-types';
 import createReactClass from 'create-react-class';
-import sdk from '../../../index';
-import MatrixClientPeg from '../../../MatrixClientPeg';
+import * as sdk from '../../../index';
+import {MatrixClientPeg} from '../../../MatrixClientPeg';
 import dis from '../../../dispatcher';
 import classNames from 'classnames';
 import { _t } from '../../../languageHandler';
@@ -43,7 +43,7 @@ const MessageCase = Object.freeze({
     OtherError: "OtherError",
 });
 
-module.exports = createReactClass({
+export default createReactClass({
     displayName: 'RoomPreviewBar',
 
     propTypes: {
@@ -451,16 +451,21 @@ module.exports = createReactClass({
                 if (isDM) {
                     title = _t("Do you want to chat with %(user)s?",
                         { user: inviteMember.name });
+                    subTitle = [
+                        avatar,
+                        _t("<userName/> wants to chat", {}, {userName: () => inviterElement}),
+                    ];
+                    primaryActionLabel = _t("Start chatting");
                 } else {
                     title = _t("Do you want to join %(roomName)s?",
                         { roomName: this._roomName() });
+                    subTitle = [
+                        avatar,
+                        _t("<userName/> invited you", {}, {userName: () => inviterElement}),
+                    ];
+                    primaryActionLabel = _t("Accept");
                 }
-                subTitle = [
-                    avatar,
-                    _t("<userName/> invited you", {}, {userName: () => inviterElement}),
-                ];
 
-                primaryActionLabel = _t("Accept");
                 primaryActionHandler = this.props.onJoinClick;
                 secondaryActionLabel = _t("Reject");
                 secondaryActionHandler = this.props.onRejectClick;

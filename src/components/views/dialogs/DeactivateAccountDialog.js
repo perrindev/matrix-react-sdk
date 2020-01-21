@@ -18,15 +18,15 @@ limitations under the License.
 import React from 'react';
 import PropTypes from 'prop-types';
 
-import sdk from '../../../index';
+import * as sdk from '../../../index';
 import Analytics from '../../../Analytics';
-import MatrixClientPeg from '../../../MatrixClientPeg';
+import {MatrixClientPeg} from '../../../MatrixClientPeg';
 import * as Lifecycle from '../../../Lifecycle';
 import { _t } from '../../../languageHandler';
 
 export default class DeactivateAccountDialog extends React.Component {
-    constructor(props, context) {
-        super(props, context);
+    constructor(props) {
+        super(props);
 
         this._onOk = this._onOk.bind(this);
         this._onCancel = this._onCancel.bind(this);

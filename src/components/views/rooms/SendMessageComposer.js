@@ -26,7 +26,6 @@ import {
     unescapeMessage,
 } from '../../../editor/serialize';
 import {CommandPartCreator} from '../../../editor/parts';
-import {MatrixClient} from 'matrix-js-sdk';
 import BasicMessageComposer from "./BasicMessageComposer";
 import ReplyPreview from "./ReplyPreview";
 import RoomViewStore from '../../../stores/RoomViewStore';
@@ -35,11 +34,12 @@ import {parseEvent} from '../../../editor/deserialize';
 import {findEditableEvent} from '../../../utils/EventUtils';
 import SendHistoryManager from "../../../SendHistoryManager";
 import {processCommandInput} from '../../../SlashCommands';
-import sdk from '../../../index';
+import * as sdk from '../../../index';
 import Modal from '../../../Modal';
 import {_t, _td} from '../../../languageHandler';
 import ContentMessages from '../../../ContentMessages';
 import {Key} from "../../../Keyboard";
+import MatrixClientContext from "../../../contexts/MatrixClientContext";
 
 function addReplyToMessageContent(content, repliedToEvent, permalinkCreator) {
     const replyContent = ReplyThread.makeReplyMixIn(repliedToEvent);
@@ -89,12 +89,10 @@ export default class SendMessageComposer extends React.Component {
         permalinkCreator: PropTypes.object.isRequired,
     };
 
-    static contextTypes = {
-        matrixClient: PropTypes.instanceOf(MatrixClient).isRequired,
-    };
+    static contextType = MatrixClientContext;
 
-    constructor(props, context) {
-        super(props, context);
+    constructor(props) {
+        super(props);
         this.model = null;
         this._editorRef = null;
         this.currentlyComposedEditorState = null;
@@ -245,7 +243,7 @@ export default class SendMessageComposer extends React.Component {
             const isReply = !!RoomViewStore.getQuotingEvent();
             const {roomId} = this.props.room;
             const content = createMessageContent(this.model, this.props.permalinkCreator);
-            this.context.matrixClient.sendMessage(roomId, content);
+            this.context.sendMessage(roomId, content);
             if (isReply) {
                 // Clear reply_to_event as we put the message into the queue
                 // if the send fails, retry will handle resending.
@@ -273,7 +271,7 @@ export default class SendMessageComposer extends React.Component {
     }
 
     componentWillMount() {
-        const partCreator = new CommandPartCreator(this.props.room, this.context.matrixClient);
+        const partCreator = new CommandPartCreator(this.props.room, this.context);
         const parts = this._restoreStoredEditorState(partCreator) || [];
         this.model = new EditorModel(parts, partCreator);
         this.dispatcherRef = dis.register(this.onAction);
@@ -328,7 +326,8 @@ export default class SendMessageComposer extends React.Component {
             member.rawDisplayName : userId;
         const caret = this._editorRef.getCaret();
         const position = model.positionForOffset(caret.offset, caret.atNodeEnd);
-        const insertIndex = position.index + 1;
+        // index is -1 if there are no parts but we only care for if this would be the part in position 0
+        const insertIndex = position.index > 0 ? position.index : 0;
         const parts = partCreator.createMentionParts(insertIndex, displayName, userId);
         model.transform(() => {
             const addedLen = model.insert(parts, position);
@@ -361,7 +360,7 @@ export default class SendMessageComposer extends React.Component {
             // from Finder) but more images copied from a different website
             // / word processor etc.
             ContentMessages.sharedInstance().sendContentListToRoom(
-                Array.from(clipboardData.files), this.props.room.roomId, this.context.matrixClient,
+                Array.from(clipboardData.files), this.props.room.roomId, this.context,
             );
         }
     }

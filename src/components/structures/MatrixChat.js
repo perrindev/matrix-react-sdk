@@ -2,7 +2,7 @@
 Copyright 2015, 2016 OpenMarket Ltd
 Copyright 2017 Vector Creations Ltd
 Copyright 2017-2019 New Vector Ltd
-Copyright 2019 The Matrix.org Foundation C.I.C.
+Copyright 2019, 2020 The Matrix.org Foundation C.I.C.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,14 +20,17 @@ limitations under the License.
 import React from 'react';
 import createReactClass from 'create-react-class';
 import PropTypes from 'prop-types';
-import Matrix from "matrix-js-sdk";
+import * as Matrix from "matrix-js-sdk";
+import { isCryptoAvailable } from 'matrix-js-sdk/src/crypto';
 
 // focus-visible is a Polyfill for the :focus-visible CSS pseudo-attribute used by _AccessibleButton.scss
 import 'focus-visible';
+// what-input helps improve keyboard accessibility
+import 'what-input';
 
 import Analytics from "../../Analytics";
 import { DecryptionFailureTracker } from "../../DecryptionFailureTracker";
-import MatrixClientPeg from "../../MatrixClientPeg";
+import {MatrixClientPeg} from "../../MatrixClientPeg";
 import PlatformPeg from "../../PlatformPeg";
 import SdkConfig from "../../SdkConfig";
 import * as RoomListSorter from "../../RoomListSorter";
@@ -36,7 +39,7 @@ import Notifier from '../../Notifier';
 
 import Modal from "../../Modal";
 import Tinter from "../../Tinter";
-import sdk from '../../index';
+import * as sdk from '../../index';
 import { showStartChatInviteDialog, showRoomInviteDialog } from '../../RoomInvite';
 import * as Rooms from '../../Rooms';
 import linkifyMatrix from "../../linkify-matrix";
@@ -60,10 +63,10 @@ import { countRoomsWithNotif } from '../../RoomNotifs';
 import { ThemeWatcher } from "../../theme";
 import { storeRoomAliasInCache } from '../../RoomAliasCache';
 import { defer } from "../../utils/promise";
-import KeyVerificationStateObserver from '../../utils/KeyVerificationStateObserver';
+import ToastStore from "../../stores/ToastStore";
 
 /** constants for MatrixChat.state.view */
-const VIEWS = {
+export const VIEWS = {
     // a special initial state which is only used at startup, while we are
     // trying to re-animate a matrix client or register as a guest.
     LOADING: 0,
@@ -77,18 +80,14 @@ const VIEWS = {
     // we are showing the registration view
     REGISTER: 3,
 
-    // completeing the registration flow
+    // completing the registration flow
     POST_REGISTRATION: 4,
 
     // showing the 'forgot password' view
     FORGOT_PASSWORD: 5,
 
-    // we have valid matrix credentials (either via an explicit login, via the
-    // initial re-animation/guest registration, or via a registration), and are
-    // now setting up a matrixclient to talk to it. This isn't an instant
-    // process because we need to clear out indexeddb. While it is going on we
-    // show a big spinner.
-    LOGGING_IN: 6,
+    // showing flow to trust this new device with cross-signing
+    COMPLETE_SECURITY: 6,
 
     // we are logged in with an active matrix client.
     LOGGED_IN: 7,
@@ -148,16 +147,6 @@ export default createReactClass({
         makeRegistrationUrl: PropTypes.func.isRequired,
     },
 
-    childContextTypes: {
-        appConfig: PropTypes.object,
-    },
-
-    getChildContext: function() {
-        return {
-            appConfig: this.props.config,
-        };
-    },
-
     getInitialState: function() {
         const s = {
             // the master view we are showing.
@@ -175,10 +164,9 @@ export default createReactClass({
             viewUserId: null,
             // this is persisted as mx_lhs_size, loaded in LoggedInView
             collapseLhs: false,
-            collapsedRhs: window.localStorage.getItem("mx_rhs_collapsed") === "true",
             leftDisabled: false,
             middleDisabled: false,
-            rightDisabled: false,
+            // the right panel's disabled state is tracked in its store.
 
             version: null,
             newVersion: null,
@@ -657,36 +645,20 @@ export default createReactClass({
                     collapseLhs: false,
                 });
                 break;
-            case 'hide_right_panel':
-                window.localStorage.setItem("mx_rhs_collapsed", true);
-                this.setState({
-                    collapsedRhs: true,
-                });
-                break;
-            case 'show_right_panel':
-                window.localStorage.setItem("mx_rhs_collapsed", false);
-                this.setState({
-                    collapsedRhs: false,
-                });
-                break;
             case 'panel_disable': {
                 this.setState({
                     leftDisabled: payload.leftDisabled || payload.sideDisabled || false,
                     middleDisabled: payload.middleDisabled || false,
-                    rightDisabled: payload.rightDisabled || payload.sideDisabled || false,
+                    // We don't track the right panel being disabled here - it's tracked in the store.
                 });
                 break;
             }
-            case 'on_logging_in':
-                // We are now logging in, so set the state to reflect that
-                // NB. This does not touch 'ready' since if our dispatches
-                // are delayed, the sync could already have completed
-                this.setStateForNewView({
-                    view: VIEWS.LOGGING_IN,
-                });
-                break;
             case 'on_logged_in':
-                if (!Lifecycle.isSoftLogout()) {
+                if (
+                    !Lifecycle.isSoftLogout() &&
+                    this.state.view !== VIEWS.LOGIN &&
+                    this.state.view !== VIEWS.COMPLETE_SECURITY
+                ) {
                     this._onLoggedIn();
                 }
                 break;
@@ -1190,7 +1162,7 @@ export default createReactClass({
             if (this.props.config.welcomeUserId && getCurrentLanguage().startsWith("en")) {
                 const welcomeUserRoom = await this._startWelcomeUserChat();
                 if (welcomeUserRoom === null) {
-                    // We didn't rediret to the welcome user room, so show
+                    // We didn't redirect to the welcome user room, so show
                     // the homepage.
                     dis.dispatch({action: 'view_home_page'});
                 }
@@ -1245,7 +1217,6 @@ export default createReactClass({
             view: VIEWS.LOGIN,
             ready: false,
             collapseLhs: false,
-            collapsedRhs: false,
             currentRoomId: null,
         });
         this.subTitleStatus = '';
@@ -1261,7 +1232,6 @@ export default createReactClass({
             view: VIEWS.SOFT_LOGOUT,
             ready: false,
             collapseLhs: false,
-            collapsedRhs: false,
             currentRoomId: null,
         });
         this.subTitleStatus = '';
@@ -1412,6 +1382,8 @@ export default createReactClass({
         cli.on("Session.logged_out", () => dft.stop());
         cli.on("Event.decrypted", (e, err) => dft.eventDecrypted(e, err));
 
+        // TODO: We can remove this once cross-signing is the only way.
+        // https://github.com/vector-im/riot-web/issues/11908
         const krh = new KeyRequestHandler(cli);
         cli.on("crypto.roomKeyRequest", (req) => {
             krh.handleKeyRequest(req);
@@ -1479,24 +1451,16 @@ export default createReactClass({
             }
         });
 
-        if (SettingsStore.isFeatureEnabled("feature_dm_verification")) {
+        if (SettingsStore.isFeatureEnabled("feature_cross_signing")) {
             cli.on("crypto.verification.request", request => {
-                let requestObserver;
-                if (request.event.getRoomId()) {
-                    requestObserver = new KeyVerificationStateObserver(
-                        request.event, MatrixClientPeg.get());
-                }
-
-                if (!requestObserver || requestObserver.pending) {
-                    dis.dispatch({
-                        action: "show_toast",
-                        toast: {
-                            key: request.event.getId(),
-                            title: _t("Verification Request"),
-                            icon: "verification",
-                            props: {request, requestObserver},
-                            component: sdk.getComponent("toasts.VerificationRequestToast"),
-                        },
+                console.log(`MatrixChat got a .request ${request.channel.transactionId}`, request.event.getRoomId());
+                if (request.pending) {
+                    ToastStore.sharedInstance().addOrReplaceToast({
+                        key: 'verifreq_' + request.channel.transactionId,
+                        title: _t("Verification Request"),
+                        icon: "verification",
+                        props: {request},
+                        component: sdk.getComponent("toasts.VerificationRequestToast"),
                     });
                 }
             });
@@ -1505,7 +1469,7 @@ export default createReactClass({
                 const IncomingSasDialog = sdk.getComponent("views.dialogs.IncomingSasDialog");
                 Modal.createTrackedDialog('Incoming Verification', '', IncomingSasDialog, {
                     verifier,
-                });
+                }, null, /* priority = */ false, /* static = */ true);
             });
         }
         // Fire the tinter right on startup to ensure the default theme is applied
@@ -1528,6 +1492,15 @@ export default createReactClass({
                 "blacklistUnverifiedDevices",
             );
             cli.setGlobalBlacklistUnverifiedDevices(blacklistEnabled);
+
+            // With cross-signing enabled, we send to unknown devices
+            // without prompting. Any bad-device status the user should
+            // be aware of will be signalled through the room shield
+            // changing colour. More advanced behaviour will come once
+            // we implement more settings.
+            cli.setGlobalErrorOnUnknownDevices(
+                !SettingsStore.isFeatureEnabled("feature_cross_signing"),
+            );
         }
     },
 
@@ -1587,14 +1560,26 @@ export default createReactClass({
             dis.dispatch({
                 action: 'view_my_groups',
             });
+        } else if (screen === 'complete_security') {
+            dis.dispatch({
+                action: 'start_complete_security',
+            });
         } else if (screen == 'post_registration') {
             dis.dispatch({
                 action: 'start_post_registration',
             });
         } else if (screen.indexOf('room/') == 0) {
-            const segments = screen.substring(5).split('/');
-            const roomString = segments[0];
-            let eventId = segments.splice(1).join("/"); // empty string if no event id given
+            // Rooms can have the following formats:
+            // #room_alias:domain or !opaque_id:domain
+            const room = screen.substring(5);
+            const domainOffset = room.indexOf(':') + 1; // 0 in case room does not contain a :
+            let eventOffset = room.length;
+            // room aliases can contain slashes only look for slash after domain
+            if (room.substring(domainOffset).indexOf('/') > -1) {
+                eventOffset = domainOffset + room.substring(domainOffset).indexOf('/');
+            }
+            const roomString = room.substring(0, eventOffset);
+            let eventId = room.substring(eventOffset + 1); // empty string if no event id given
 
             // Previously we pulled the eventID from the segments in such a way
             // where if there was no eventId then we'd get undefined. However, we
@@ -1705,20 +1690,12 @@ export default createReactClass({
     handleResize: function(e) {
         const hideLhsThreshold = 1000;
         const showLhsThreshold = 1000;
-        const hideRhsThreshold = 820;
-        const showRhsThreshold = 820;
 
         if (this._windowWidth > hideLhsThreshold && window.innerWidth <= hideLhsThreshold) {
             dis.dispatch({ action: 'hide_left_panel' });
         }
         if (this._windowWidth <= showLhsThreshold && window.innerWidth > showLhsThreshold) {
             dis.dispatch({ action: 'show_left_panel' });
-        }
-        if (this._windowWidth > hideRhsThreshold && window.innerWidth <= hideRhsThreshold) {
-            dis.dispatch({ action: 'hide_right_panel' });
-        }
-        if (this._windowWidth <= showRhsThreshold && window.innerWidth > showRhsThreshold) {
-            dis.dispatch({ action: 'show_right_panel' });
         }
 
         this.state.resizeNotifier.notifyWindowResized();
@@ -1836,20 +1813,68 @@ export default createReactClass({
         this._loggedInView = ref;
     },
 
+    async onUserCompletedLoginFlow(credentials) {
+        // Wait for the client to be logged in (but not started)
+        // which is enough to ask the server about account data.
+        const loggedIn = new Promise(resolve => {
+            const actionHandlerRef = dis.register(payload => {
+                if (payload.action !== "on_logged_in") {
+                    return;
+                }
+                dis.unregister(actionHandlerRef);
+                resolve();
+            });
+        });
+
+        // Create and start the client in the background
+        Lifecycle.setLoggedIn(credentials);
+        await loggedIn;
+
+        const cli = MatrixClientPeg.get();
+        // We're checking `isCryptoAvailable` here instead of `isCryptoEnabled`
+        // because the client hasn't been started yet.
+        if (!isCryptoAvailable()) {
+            this._onLoggedIn();
+        }
+
+        // Test for the master cross-signing key in SSSS as a quick proxy for
+        // whether cross-signing has been set up on the account.
+        let masterKeyInStorage = false;
+        try {
+            masterKeyInStorage = !!await cli.getAccountDataFromServer("m.cross_signing.master");
+        } catch (e) {
+            if (e.errcode !== "M_NOT_FOUND") throw e;
+        }
+
+        if (masterKeyInStorage) {
+            this.setStateForNewView({ view: VIEWS.COMPLETE_SECURITY });
+        } else {
+            this._onLoggedIn();
+        }
+    },
+
+    onCompleteSecurityFinished() {
+        this._onLoggedIn();
+    },
+
     render: function() {
         // console.log(`Rendering MatrixChat with view ${this.state.view}`);
 
         let view;
 
-        if (
-            this.state.view === VIEWS.LOADING ||
-            this.state.view === VIEWS.LOGGING_IN
-        ) {
+        if (this.state.view === VIEWS.LOADING) {
             const Spinner = sdk.getComponent('elements.Spinner');
             view = (
                 <div className="mx_MatrixChat_splash">
                     <Spinner />
                 </div>
+            );
+        } else if (this.state.view === VIEWS.COMPLETE_SECURITY) {
+            const CompleteSecurity = sdk.getComponent('structures.auth.CompleteSecurity');
+            view = (
+                <CompleteSecurity
+                    onFinished={this.onCompleteSecurityFinished}
+                />
             );
         } else if (this.state.view === VIEWS.POST_REGISTRATION) {
             // needs to be before normal PageTypes as you are logged in technically
@@ -1935,7 +1960,7 @@ export default createReactClass({
             const Login = sdk.getComponent('structures.auth.Login');
             view = (
                 <Login
-                    onLoggedIn={Lifecycle.setLoggedIn}
+                    onLoggedIn={this.onUserCompletedLoginFlow}
                     onRegisterClick={this.onRegisterClick}
                     fallbackHsUrl={this.getFallbackHsUrl()}
                     defaultDeviceDisplayName={this.props.defaultDeviceDisplayName}

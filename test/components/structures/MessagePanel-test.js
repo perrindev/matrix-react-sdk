@@ -23,40 +23,26 @@ import ReactDOM from "react-dom";
 import PropTypes from "prop-types";
 const TestUtils = require('react-dom/test-utils');
 const expect = require('expect');
-import sinon from 'sinon';
 import { EventEmitter } from "events";
 
-const sdk = require('matrix-react-sdk');
+import sdk from '../../skinned-sdk';
 
 const MessagePanel = sdk.getComponent('structures.MessagePanel');
-import MatrixClientPeg from '../../../src/MatrixClientPeg';
+import {MatrixClientPeg} from '../../../src/MatrixClientPeg';
 import Matrix from 'matrix-js-sdk';
 
-const test_utils = require('test-utils');
-const mockclock = require('mock-clock');
+const test_utils = require('../../test-utils');
+const mockclock = require('../../mock-clock');
 
 import Velocity from 'velocity-animate';
+import MatrixClientContext from "../../../src/contexts/MatrixClientContext";
+import RoomContext from "../../../src/contexts/RoomContext";
 
 let client;
 const room = new Matrix.Room();
 
 // wrap MessagePanel with a component which provides the MatrixClient in the context.
 const WrappedMessagePanel = createReactClass({
-    childContextTypes: {
-        matrixClient: PropTypes.object,
-        room: PropTypes.object,
-    },
-
-    getChildContext: function() {
-        return {
-            matrixClient: client,
-            room: {
-                canReact: true,
-                canReply: true,
-            },
-        };
-    },
-
     getInitialState: function() {
         return {
             resizeNotifier: new EventEmitter(),
@@ -64,7 +50,11 @@ const WrappedMessagePanel = createReactClass({
     },
 
     render: function() {
-        return <MessagePanel room={room} {...this.props} resizeNotifier={this.state.resizeNotifier} />;
+        return <MatrixClientContext.Provider value={client}>
+            <RoomContext.Provider value={{ canReact: true, canReply: true }}>
+                <MessagePanel room={room} {...this.props} resizeNotifier={this.state.resizeNotifier} />
+            </RoomContext.Provider>
+        </MatrixClientContext.Provider>;
     },
 });
 
@@ -72,17 +62,16 @@ describe('MessagePanel', function() {
     const clock = mockclock.clock();
     const realSetTimeout = window.setTimeout;
     const events = mkEvents();
-    let sandbox = null;
 
     beforeEach(function() {
-        test_utils.beforeEach(this);
-        sandbox = test_utils.stubClient();
+        test_utils.stubClient();
         client = MatrixClientPeg.get();
         client.credentials = {userId: '@me:here'};
 
         // HACK: We assume all settings want to be disabled
-        SettingsStore.getValue = sinon.stub().returns(false);
-        SettingsStore.getValue.withArgs('showDisplaynameChanges').returns(true);
+        SettingsStore.getValue = jest.fn((arg) => {
+            return arg === "showDisplaynameChanges";
+        });
 
         // This option clobbers the duration of all animations to be 1ms
         // which makes unit testing a lot simpler (the animation doesn't
@@ -95,7 +84,6 @@ describe('MessagePanel', function() {
         delete Velocity.mock;
 
         clock.uninstall();
-        sandbox.restore();
     });
 
     function mkEvents() {

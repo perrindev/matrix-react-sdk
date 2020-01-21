@@ -16,8 +16,8 @@ limitations under the License.
 import React from 'react';
 import {_t, _td} from '../../../languageHandler';
 import AppTile from '../elements/AppTile';
-import MatrixClientPeg from '../../../MatrixClientPeg';
-import sdk from '../../../index';
+import {MatrixClientPeg} from '../../../MatrixClientPeg';
+import * as sdk from '../../../index';
 import dis from '../../../dispatcher';
 import AccessibleButton from '../elements/AccessibleButton';
 import WidgetUtils from '../../../utils/WidgetUtils';
@@ -25,6 +25,7 @@ import ActiveWidgetStore from '../../../stores/ActiveWidgetStore';
 import PersistedElement from "../elements/PersistedElement";
 import {IntegrationManagers} from "../../../integrations/IntegrationManagers";
 import SettingsStore from "../../../settings/SettingsStore";
+import {ContextMenu} from "../../structures/ContextMenu";
 
 const widgetType = 'm.stickerpicker';
 
@@ -180,8 +181,7 @@ export default class Stickerpicker extends React.Component {
             case "stickerpicker_close":
                 this.setState({showStickers: false});
                 break;
-            case "show_right_panel":
-            case "hide_right_panel":
+            case "after_right_panel_phase_change":
             case "show_left_panel":
             case "hide_left_panel":
                 this.setState({showStickers: false});
@@ -315,8 +315,8 @@ export default class Stickerpicker extends React.Component {
 
         // Offset the chevron location, which is relative to the left of the context menu
         //  (10 = offset when context menu would not be displayed off viewport)
-        //  (8 = value required in practice (possibly 10 - 2 where the 2 = context menu borders)
-        const stickerPickerChevronOffset = Math.max(10, 8 + window.pageXOffset + buttonRect.left - x);
+        //  (2 = context menu borders)
+        const stickerPickerChevronOffset = Math.max(10, 2 + window.pageXOffset + buttonRect.left - x);
 
         const y = (buttonRect.top + (buttonRect.height / 2) + window.pageYOffset) - 19;
 
@@ -371,26 +371,8 @@ export default class Stickerpicker extends React.Component {
     }
 
     render() {
-        const ContextualMenu = sdk.getComponent('structures.ContextualMenu');
-        const GenericElementContextMenu = sdk.getComponent('context_menus.GenericElementContextMenu');
+        let stickerPicker;
         let stickersButton;
-
-        const stickerPicker = <ContextualMenu
-            elementClass={GenericElementContextMenu}
-            chevronOffset={this.state.stickerPickerChevronOffset}
-            chevronFace={'bottom'}
-            left={this.state.stickerPickerX}
-            top={this.state.stickerPickerY}
-            menuWidth={this.popoverWidth}
-            menuHeight={this.popoverHeight}
-            element={this._getStickerpickerContent()}
-            onFinished={this._onFinished}
-            menuPaddingTop={0}
-            menuPaddingLeft={0}
-            menuPaddingRight={0}
-            zIndex={STICKERPICKER_Z_INDEX}
-        />;
-
         if (this.state.showStickers) {
             // Show hide-stickers button
             stickersButton =
@@ -402,6 +384,23 @@ export default class Stickerpicker extends React.Component {
                     title={_t("Hide Stickers")}
                 >
                 </AccessibleButton>;
+
+            const GenericElementContextMenu = sdk.getComponent('context_menus.GenericElementContextMenu');
+            stickerPicker = <ContextMenu
+                chevronOffset={this.state.stickerPickerChevronOffset}
+                chevronFace="bottom"
+                left={this.state.stickerPickerX}
+                top={this.state.stickerPickerY}
+                menuWidth={this.popoverWidth}
+                menuHeight={this.popoverHeight}
+                onFinished={this._onFinished}
+                menuPaddingTop={0}
+                menuPaddingLeft={0}
+                menuPaddingRight={0}
+                zIndex={STICKERPICKER_Z_INDEX}
+            >
+                <GenericElementContextMenu element={this._getStickerpickerContent()} onResize={this._onFinished} />
+            </ContextMenu>;
         } else {
             // Show show-stickers button
             stickersButton =
@@ -415,8 +414,8 @@ export default class Stickerpicker extends React.Component {
                 </AccessibleButton>;
         }
         return <React.Fragment>
-            {stickersButton}
-            {this.state.showStickers && stickerPicker}
+            { stickersButton }
+            { stickerPicker }
         </React.Fragment>;
     }
 }

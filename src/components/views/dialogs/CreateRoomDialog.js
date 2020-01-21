@@ -17,11 +17,11 @@ limitations under the License.
 import React from 'react';
 import createReactClass from 'create-react-class';
 import PropTypes from 'prop-types';
-import sdk from '../../../index';
+import * as sdk from '../../../index';
 import SdkConfig from '../../../SdkConfig';
 import withValidation from '../elements/Validation';
 import { _t } from '../../../languageHandler';
-import MatrixClientPeg from '../../../MatrixClientPeg';
+import {MatrixClientPeg} from '../../../MatrixClientPeg';
 import {Key} from "../../../Keyboard";
 
 export default createReactClass({
@@ -173,7 +173,7 @@ export default createReactClass({
             const domain = MatrixClientPeg.get().getDomain();
             aliasField = (
                 <div className="mx_CreateRoomDialog_aliasContainer">
-                    <RoomAliasField id="alias" ref={ref => this._aliasFieldRef = ref} onChange={this.onAliasChange} domain={domain} />
+                    <RoomAliasField id="alias" ref={ref => this._aliasFieldRef = ref} onChange={this.onAliasChange} domain={domain} value={this.state.alias} />
                 </div>
             );
         } else {
