@@ -548,6 +548,15 @@ div.mx_EventTile_notSent.mx_EventTile_redacted .mx_UnknownBody {
         position: absolute;
         right: unset;
     }
+
+    .mx_MImageBody_thumbnail {
+        left: unset;
+        right: 0px;
+    }
+
+    .mx_EventTile_content .markdown-body {
+        text-align: left;
+    }
 }
 
 /* Various markdown overrides */
