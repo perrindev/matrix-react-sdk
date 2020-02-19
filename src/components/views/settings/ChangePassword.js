@@ -113,7 +113,7 @@ export default createReactClass({
             description:
                 <div>
                     { _t(
-                        'Changing password will currently reset any end-to-end encryption keys on all devices, ' +
+                        'Changing password will currently reset any end-to-end encryption keys on all sessions, ' +
                         'making encrypted chat history unreadable, unless you first export your room keys ' +
                         'and re-import them afterwards. ' +
                         'In future this will be improved.',
@@ -253,20 +253,24 @@ export default createReactClass({
                     <form className={this.props.className} onSubmit={this.onClickChange}>
                         { currentPassword }
                         <div className={rowClassName}>
-                            <Field id="mx_ChangePassword_newPassword"
+                            <Field
+                                id="mx_ChangePassword_newPassword"
                                 type="password"
                                 label={passwordLabel}
                                 value={this.state.newPassword}
                                 autoFocus={this.props.autoFocusNewPasswordInput}
                                 onChange={this.onChangeNewPassword}
+                                autoComplete="new-password"
                             />
                         </div>
                         <div className={rowClassName}>
-                            <Field id="mx_ChangePassword_newPasswordConfirm"
+                            <Field
+                                id="mx_ChangePassword_newPasswordConfirm"
                                 type="password"
                                 label={_t("Confirm password")}
                                 value={this.state.newPasswordConfirm}
                                 onChange={this.onChangeNewPasswordConfirm}
+                                autoComplete="new-password"
                             />
                         </div>
                         <AccessibleButton className={buttonClassName} kind={this.props.buttonKind} onClick={this.onClickChange}>

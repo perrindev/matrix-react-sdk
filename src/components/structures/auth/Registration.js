@@ -2,7 +2,7 @@
 Copyright 2015, 2016 OpenMarket Ltd
 Copyright 2017 Vector Creations Ltd
 Copyright 2018, 2019 New Vector Ltd
-Copyright 2019 The Matrix.org Foundation C.I.C.
+Copyright 2019, 2020 The Matrix.org Foundation C.I.C.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -45,7 +45,13 @@ export default createReactClass({
     displayName: 'Registration',
 
     propTypes: {
+        // Called when the user has logged in. Params:
+        // - object with userId, deviceId, homeserverUrl, identityServerUrl, accessToken
+        // - The user's password, if available and applicable (may be cached in memory
+        //   for a short time so the user is not required to re-enter their password
+        //   for operations like uploading cross-signing keys).
         onLoggedIn: PropTypes.func.isRequired,
+
         clientSecret: PropTypes.string,
         sessionId: PropTypes.string,
         makeRegistrationUrl: PropTypes.func.isRequired,
@@ -56,6 +62,7 @@ export default createReactClass({
         // registration shouldn't know or care how login is done.
         onLoginClick: PropTypes.func.isRequired,
         onServerConfigChange: PropTypes.func.isRequired,
+        defaultDeviceDisplayName: PropTypes.string,
     },
 
     getInitialState: function() {
@@ -348,7 +355,7 @@ export default createReactClass({
                 homeserverUrl: this.state.matrixClient.getHomeserverUrl(),
                 identityServerUrl: this.state.matrixClient.getIdentityServerUrl(),
                 accessToken: response.access_token,
-            });
+            }, this.state.formVals.password);
 
             this._setupPushers(cli);
             // we're still busy until we get unmounted: don't show the registration form again
@@ -426,15 +433,14 @@ export default createReactClass({
         // session).
         if (!this.state.formVals.password) inhibitLogin = null;
 
-        return this.state.matrixClient.register(
-            this.state.formVals.username,
-            this.state.formVals.password,
-            undefined, // session id: included in the auth dict already
-            auth,
-            null,
-            null,
-            inhibitLogin,
-        );
+        const registerParams = {
+            username: this.state.formVals.username,
+            password: this.state.formVals.password,
+            initial_device_display_name: this.props.defaultDeviceDisplayName,
+        };
+        if (auth) registerParams.auth = auth;
+        if (inhibitLogin !== undefined && inhibitLogin !== null) registerParams.inhibitLogin = inhibitLogin;
+        return this.state.matrixClient.registerRequest(registerParams);
     },
 
     _getUIAuthInputs: function() {

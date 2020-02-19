@@ -94,6 +94,17 @@ export default class BasicMessageEditor extends React.Component {
         this._emoticonSettingHandle = null;
     }
 
+    componentDidUpdate(prevProps) {
+        if (this.props.placeholder !== prevProps.placeholder && this.props.placeholder) {
+            const {isEmpty} = this.props.model;
+            if (isEmpty) {
+                this._showPlaceholder();
+            } else {
+                this._hidePlaceholder();
+            }
+        }
+    }
+
     _replaceEmoticon = (caretPosition, inputType, diff) => {
         const {model} = this.props;
         const range = model.startRange(caretPosition);
@@ -209,6 +220,7 @@ export default class BasicMessageEditor extends React.Component {
             const range = getRangeForSelection(this._editorRef, model, selection);
             const selectedParts = range.parts.map(p => p.serialize());
             event.clipboardData.setData("application/x-riot-composer", JSON.stringify(selectedParts));
+            event.clipboardData.setData("text/plain", text); // so plain copy/paste works
             if (type === "cut") {
                 // Remove the text, updating the model as appropriate
                 this._modifiedFlag = true;

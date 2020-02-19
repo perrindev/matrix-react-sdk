@@ -20,6 +20,7 @@ import {MatrixClientPeg} from '../../../MatrixClientPeg';
 import { _t } from '../../../languageHandler';
 import * as sdk from '../../../index';
 import { accessSecretStorage } from '../../../CrossSigningManager';
+import Modal from '../../../Modal';
 
 export default class CrossSigningPanel extends React.PureComponent {
     constructor(props) {
@@ -86,17 +87,30 @@ export default class CrossSigningPanel extends React.PureComponent {
      * 2. Access existing secret storage by requesting passphrase and accessing
      *    cross-signing keys as needed.
      * 3. All keys are loaded and there's nothing to do.
+     * @param {bool} [force] Bootstrap again even if keys already present
      */
-    _bootstrapSecureSecretStorage = async () => {
+    _bootstrapSecureSecretStorage = async (force=false) => {
         this.setState({ error: null });
         try {
-            await accessSecretStorage();
+            await accessSecretStorage(() => undefined, force);
         } catch (e) {
             this.setState({ error: e });
             console.error("Error bootstrapping secret storage", e);
         }
         if (this._unmounted) return;
         this._getUpdatedStatus();
+    }
+
+    onDestroyStorage = (act) => {
+        if (!act) return;
+        this._bootstrapSecureSecretStorage(true);
+    }
+
+    _destroySecureSecretStorage = () => {
+        const ConfirmDestoryCrossSigningDialog = sdk.getComponent("dialogs.ConfirmDestroyCrossSigningDialog");
+        Modal.createDialog(ConfirmDestoryCrossSigningDialog, {
+            onFinished: this.onDestroyStorage,
+        });
     }
 
     render() {
@@ -127,7 +141,7 @@ export default class CrossSigningPanel extends React.PureComponent {
         } else if (crossSigningPrivateKeysInStorage) {
             summarisedStatus = <p>{_t(
                 "Your account has a cross-signing identity in secret storage, but it " +
-                "is not yet trusted by this device.",
+                "is not yet trusted by this session.",
             )}</p>;
         } else {
             summarisedStatus = <p>{_t(
@@ -142,6 +156,12 @@ export default class CrossSigningPanel extends React.PureComponent {
                     {_t("Bootstrap cross-signing and secret storage")}
                 </AccessibleButton>
             </div>;
+        } else {
+            bootstrapButton = <div className="mx_CrossSigningPanel_buttonRow">
+                <AccessibleButton kind="danger" onClick={this._destroySecureSecretStorage}>
+                    {_t("Reset cross-signing and secret storage")}
+                </AccessibleButton>
+            </div>;
         }
 
         return (
@@ -152,7 +172,7 @@ export default class CrossSigningPanel extends React.PureComponent {
                     <table className="mx_CrossSigningPanel_statusList"><tbody>
                         <tr>
                             <td>{_t("Cross-signing public keys:")}</td>
-                            <td>{crossSigningPublicKeysOnDevice ? _t("on device") : _t("not found")}</td>
+                            <td>{crossSigningPublicKeysOnDevice ? _t("in memory") : _t("not found")}</td>
                         </tr>
                         <tr>
                             <td>{_t("Cross-signing private keys:")}</td>
