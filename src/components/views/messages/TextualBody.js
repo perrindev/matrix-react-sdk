@@ -30,7 +30,7 @@ import { _t } from '../../../languageHandler';
 import * as ContextMenu from '../../structures/ContextMenu';
 import SettingsStore from "../../../settings/SettingsStore";
 import ReplyThread from "../elements/ReplyThread";
-import {pillifyLinks} from '../../../utils/pillify';
+import {pillifyLinks, unmountPills} from '../../../utils/pillify';
 import {IntegrationManagers} from "../../../integrations/IntegrationManagers";
 import {isPermalinkHost} from "../../../utils/permalinks/Permalinks";
 import {toRightOf} from "../../structures/ContextMenu";
@@ -86,12 +86,14 @@ export default createReactClass({
         return successful;
     },
 
+    // TODO: [REACT-WARNING] Replace component with real class, use constructor for refs
     UNSAFE_componentWillMount: function() {
         this._content = createRef();
     },
 
     componentDidMount: function() {
         this._unmounted = false;
+        this._pills = [];
         if (!this.props.editState) {
             this._applyFormatting();
         }
@@ -103,7 +105,7 @@ export default createReactClass({
         // pillifyLinks BEFORE linkifyElement because plain room/user URLs in the composer
         // are still sent as plaintext URLs. If these are ever pillified in the composer,
         // we should be pillify them here by doing the linkifying BEFORE the pillifying.
-        pillifyLinks([this._content.current], this.props.mxEvent);
+        pillifyLinks([this._content.current], this.props.mxEvent, this._pills);
         HtmlUtils.linkifyElement(this._content.current);
         this.calculateUrlPreview();
 
@@ -146,6 +148,7 @@ export default createReactClass({
 
     componentWillUnmount: function() {
         this._unmounted = true;
+        unmountPills(this._pills);
     },
 
     shouldComponentUpdate: function(nextProps, nextState) {
@@ -275,7 +278,7 @@ export default createReactClass({
             const button = document.createElement("span");
             button.className = "mx_EventTile_copyButton";
             button.onclick = (e) => {
-                const copyCode = button.parentNode.getElementsByTagName("code")[0];
+                const copyCode = button.parentNode.getElementsByTagName("pre")[0];
                 const successful = this.copyToClipboard(copyCode.textContent);
 
                 const buttonRect = e.target.getBoundingClientRect();
@@ -372,7 +375,9 @@ export default createReactClass({
                     const height = window.screen.height > 800 ? 800 : window.screen.height;
                     const left = (window.screen.width - width) / 2;
                     const top = (window.screen.height - height) / 2;
-                    window.open(completeUrl, '_blank', `height=${height}, width=${width}, top=${top}, left=${left},`);
+                    const features = `height=${height}, width=${width}, top=${top}, left=${left},`;
+                    const wnd = window.open(completeUrl, '_blank', features);
+                    wnd.opener = null;
                 },
             });
         });

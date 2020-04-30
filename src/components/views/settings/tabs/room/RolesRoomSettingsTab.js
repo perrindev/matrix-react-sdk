@@ -33,6 +33,7 @@ const plEventsToLabels = {
     "m.room.tombstone": _td("Upgrade the room"),
     "m.room.encryption": _td("Enable room encryption"),
 
+    // TODO: Enable support for m.widget event type (https://github.com/vector-im/riot-web/issues/13111)
     "im.vector.modular.widgets": _td("Modify widgets"),
 };
 
@@ -47,6 +48,7 @@ const plEventsToShow = {
     "m.room.tombstone": {isState: true},
     "m.room.encryption": {isState: true},
 
+    // TODO: Enable support for m.widget event type (https://github.com/vector-im/riot-web/issues/13111)
     "im.vector.modular.widgets": {isState: true},
 };
 
@@ -107,20 +109,20 @@ export default class RolesRoomSettingsTab extends React.Component {
     };
 
     componentDidMount(): void {
-        MatrixClientPeg.get().on("RoomState.members", this._onRoomMembership.bind(this));
+        MatrixClientPeg.get().on("RoomState.members", this._onRoomMembership);
     }
 
     componentWillUnmount(): void {
         const client = MatrixClientPeg.get();
         if (client) {
-            client.removeListener("RoomState.members", this._onRoomMembership.bind(this));
+            client.removeListener("RoomState.members", this._onRoomMembership);
         }
     }
 
-    _onRoomMembership(event, state, member) {
+    _onRoomMembership = (event, state, member) => {
         if (state.roomId !== this.props.roomId) return;
         this.forceUpdate();
-    }
+    };
 
     _populateDefaultPlEvents(eventsSection, stateLevel, eventsLevel) {
         for (const desiredEvent of Object.keys(plEventsToShow)) {
