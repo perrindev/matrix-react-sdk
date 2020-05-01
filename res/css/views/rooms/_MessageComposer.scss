@@ -218,14 +218,6 @@ limitations under the License.
     mask-image: url('$(res)/img/feather-customised/face.svg');
 }
 
-/* overrides comm buttons */
-.mx_MessageComposer_hangup,
-.mx_MessageComposer_voicecall,
-.mx_MessageComposer_stickers,
-.mx_MessageComposer_videocall {
-    display: none;
-}
-
 .mx_MessageComposer_formatting {
     cursor: pointer;
     margin: 0 11px;
