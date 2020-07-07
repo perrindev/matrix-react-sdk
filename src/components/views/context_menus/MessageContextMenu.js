@@ -23,7 +23,7 @@ import createReactClass from 'create-react-class';
 import {EventStatus} from 'matrix-js-sdk';
 
 import {MatrixClientPeg} from '../../../MatrixClientPeg';
-import dis from '../../../dispatcher';
+import dis from '../../../dispatcher/dispatcher';
 import * as sdk from '../../../index';
 import { _t } from '../../../languageHandler';
 import Modal from '../../../Modal';
@@ -61,7 +61,7 @@ export default createReactClass({
         };
     },
 
-    componentWillMount: function() {
+    componentDidMount: function() {
         MatrixClientPeg.get().on('RoomMember.powerLevel', this._checkPermissions);
         this._checkPermissions();
     },
@@ -90,7 +90,8 @@ export default createReactClass({
         const room = MatrixClientPeg.get().getRoom(this.props.mxEvent.getRoomId());
         const pinnedEvent = room.currentState.getStateEvents('m.room.pinned_events', '');
         if (!pinnedEvent) return false;
-        return pinnedEvent.getContent().pinned.includes(this.props.mxEvent.getId());
+        const content = pinnedEvent.getContent();
+        return content.pinned && Array.isArray(content.pinned) && content.pinned.includes(this.props.mxEvent.getId());
     },
 
     onResendClick: function() {
@@ -115,11 +116,6 @@ export default createReactClass({
         this.closeMenu();
     },
 
-    e2eInfoClicked: function() {
-        this.props.e2eInfoCallback();
-        this.closeMenu();
-    },
-
     onReportEventClick: function() {
         const ReportEventDialog = sdk.getComponent("dialogs.ReportEventDialog");
         Modal.createTrackedDialog('Report Event', '', ReportEventDialog, {
@@ -129,22 +125,24 @@ export default createReactClass({
     },
 
     onViewSourceClick: function() {
+        const ev = this.props.mxEvent.replacingEvent() || this.props.mxEvent;
         const ViewSource = sdk.getComponent('structures.ViewSource');
         Modal.createTrackedDialog('View Event Source', '', ViewSource, {
-            roomId: this.props.mxEvent.getRoomId(),
-            eventId: this.props.mxEvent.getId(),
-            content: this.props.mxEvent.event,
+            roomId: ev.getRoomId(),
+            eventId: ev.getId(),
+            content: ev.event,
         }, 'mx_Dialog_viewsource');
         this.closeMenu();
     },
 
     onViewClearSourceClick: function() {
+        const ev = this.props.mxEvent.replacingEvent() || this.props.mxEvent;
         const ViewSource = sdk.getComponent('structures.ViewSource');
         Modal.createTrackedDialog('View Clear Event Source', '', ViewSource, {
-            roomId: this.props.mxEvent.getRoomId(),
-            eventId: this.props.mxEvent.getId(),
+            roomId: ev.getRoomId(),
+            eventId: ev.getId(),
             // FIXME: _clearEvent is private
-            content: this.props.mxEvent._clearEvent,
+            content: ev._clearEvent,
         }, 'mx_Dialog_viewsource');
         this.closeMenu();
     },
@@ -414,11 +412,16 @@ export default createReactClass({
         }
         // XXX: if we use room ID, we should also include a server where the event can be found (other than in the domain of the event ID)
         const permalinkButton = (
-            <MenuItem className="mx_MessageContextMenu_field">
-                <a href={permalink} target="_blank" rel="noopener" onClick={this.onPermalinkClick} tabIndex={-1}>
-                    { mxEvent.isRedacted() || mxEvent.getType() !== 'm.room.message'
-                        ? _t('Share Permalink') : _t('Share Message') }
-                </a>
+            <MenuItem
+                element="a"
+                className="mx_MessageContextMenu_field"
+                onClick={this.onPermalinkClick}
+                href={permalink}
+                target="_blank"
+                rel="noreferrer noopener"
+            >
+                { mxEvent.isRedacted() || mxEvent.getType() !== 'm.room.message'
+                    ? _t('Share Permalink') : _t('Share Message') }
             </MenuItem>
         );
 
@@ -436,16 +439,15 @@ export default createReactClass({
             isUrlPermitted(mxEvent.event.content.external_url)
         ) {
             externalURLButton = (
-                <MenuItem className="mx_MessageContextMenu_field">
-                    <a
-                        href={mxEvent.event.content.external_url}
-                        target="_blank"
-                        rel="noopener"
-                        onClick={this.closeMenu}
-                        tabIndex={-1}
-                    >
-                        { _t('Source URL') }
-                    </a>
+                <MenuItem
+                    element="a"
+                    className="mx_MessageContextMenu_field"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    onClick={this.closeMenu}
+                    href={mxEvent.event.content.external_url}
+                >
+                    { _t('Source URL') }
                 </MenuItem>
           );
         }
@@ -454,15 +456,6 @@ export default createReactClass({
             collapseReplyThread = (
                 <MenuItem className="mx_MessageContextMenu_field" onClick={this.onCollapseReplyThreadClick}>
                     { _t('Collapse Reply Thread') }
-                </MenuItem>
-            );
-        }
-
-        let e2eInfo;
-        if (this.props.e2eInfoCallback) {
-            e2eInfo = (
-                <MenuItem className="mx_MessageContextMenu_field" onClick={this.e2eInfoClicked}>
-                    { _t('End-to-end encryption information') }
                 </MenuItem>
             );
         }
@@ -493,7 +486,6 @@ export default createReactClass({
                 { quoteButton }
                 { externalURLButton }
                 { collapseReplyThread }
-                { e2eInfo }
                 { reportEventButton }
             </div>
         );

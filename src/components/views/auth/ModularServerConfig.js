@@ -23,7 +23,8 @@ import AutoDiscoveryUtils from "../../../utils/AutoDiscoveryUtils";
 import * as ServerType from '../../views/auth/ServerTypeSelector';
 import ServerConfig from "./ServerConfig";
 
-const MODULAR_URL = 'https://modular.im/?utm_source=riot-web&utm_medium=web&utm_campaign=riot-web-authentication';
+const MODULAR_URL = 'https://modular.im/services/matrix-hosting-riot' +
+    '?utm_source=riot-web&utm_medium=web&utm_campaign=riot-web-authentication';
 
 // TODO: TravisR - Can this extend ServerConfig for most things?
 
@@ -99,14 +100,15 @@ export default class ModularServerConfig extends ServerConfig {
                     "Enter the location of your Modular homeserver. It may use your own " +
                     "domain name or be a subdomain of <a>modular.im</a>.",
                     {}, {
-                        a: sub => <a href={MODULAR_URL} target="_blank" rel="noopener">
+                        a: sub => <a href={MODULAR_URL} target="_blank" rel="noreferrer noopener">
                             {sub}
                         </a>,
                     },
                 )}
                 <form onSubmit={this.onSubmit} autoComplete="off" action={null}>
                     <div className="mx_ServerConfig_fields">
-                        <Field id="mx_ServerConfig_hsUrl"
+                        <Field
+                            id="mx_ServerConfig_hsUrl"
                             label={_t("Server Name")}
                             placeholder={this.props.serverConfig.hsUrl}
                             value={this.state.hsUrl}

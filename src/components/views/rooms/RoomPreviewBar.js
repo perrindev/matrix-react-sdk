@@ -21,7 +21,7 @@ import PropTypes from 'prop-types';
 import createReactClass from 'create-react-class';
 import * as sdk from '../../../index';
 import {MatrixClientPeg} from '../../../MatrixClientPeg';
-import dis from '../../../dispatcher';
+import dis from '../../../dispatcher/dispatcher';
 import classNames from 'classnames';
 import { _t } from '../../../languageHandler';
 import IdentityAuthClient from '../../../IdentityAuthClient';
@@ -97,7 +97,7 @@ export default createReactClass({
         };
     },
 
-    componentWillMount: function() {
+    componentDidMount: function() {
         this._checkInvitedEmail();
     },
 
@@ -266,9 +266,9 @@ export default createReactClass({
             params: {
                 email: this.props.invitedEmail,
                 signurl: this.props.signUrl,
-                room_name: this.props.oobData.room_name,
-                room_avatar_url: this.props.oobData.avatarUrl,
-                inviter_name: this.props.oobData.inviterName,
+                room_name: this.props.oobData ? this.props.oobData.room_name : null,
+                room_avatar_url: this.props.oobData ? this.props.oobData.avatarUrl : null,
+                inviter_name: this.props.oobData ? this.props.oobData.inviterName : null,
             }
         };
     },
@@ -509,7 +509,7 @@ export default createReactClass({
                         "<issueLink>submit a bug report</issueLink>.",
                         { errcode: this.props.error.errcode },
                         { issueLink: label => <a href="https://github.com/vector-im/riot-web/issues/new/choose"
-                            target="_blank" rel="noopener">{ label }</a> },
+                            target="_blank" rel="noreferrer noopener">{ label }</a> },
                     ),
                 ];
                 break;

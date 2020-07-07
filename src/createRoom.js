@@ -19,11 +19,12 @@ import {MatrixClientPeg} from './MatrixClientPeg';
 import Modal from './Modal';
 import * as sdk from './index';
 import { _t } from './languageHandler';
-import dis from "./dispatcher";
+import dis from "./dispatcher/dispatcher";
 import * as Rooms from "./Rooms";
 import DMRoomMap from "./utils/DMRoomMap";
 import {getAddressType} from "./UserAddress";
-import SettingsStore from "./settings/SettingsStore";
+
+const E2EE_WK_KEY = "im.vector.riot.e2ee";
 
 /**
  * Create a new room, and switch to it.
@@ -36,6 +37,8 @@ import SettingsStore from "./settings/SettingsStore";
  * @param {bool=} opts.guestAccess Whether to enable guest access.
  *     Default: True
  * @param {bool=} opts.encryption Whether to enable encryption.
+ *     Default: False
+ * @param {bool=} opts.inlineErrors True to raise errors off the promise instead of resolving to null.
  *     Default: False
  *
  * @returns {Promise} which resolves to the room id, or null if the
@@ -140,6 +143,9 @@ export default function createRoom(opts) {
         }
         return roomId;
     }, function(err) {
+        // Raise the error if the caller requested that we do so.
+        if (opts.inlineErrors) throw err;
+
         // We also failed to join the room (this sets joining to false in RoomViewStore)
         dis.dispatch({
             action: 'join_room_error',
@@ -169,6 +175,9 @@ export function findDMForUser(client, userId) {
             return member && (member.membership === "invite" || member.membership === "join");
         }
         return false;
+    }).sort((r1, r2) => {
+        return r2.getLastActiveTimestamp() -
+            r1.getLastActiveTimestamp();
     });
     if (suitableDMRooms.length) {
         return suitableDMRooms[0];
@@ -219,11 +228,21 @@ export async function ensureDMExists(client, userId) {
         roomId = existingDMRoom.roomId;
     } else {
         let encryption;
-        if (SettingsStore.isFeatureEnabled("feature_cross_signing")) {
+        if (privateShouldBeEncrypted()) {
             encryption = canEncryptToAllUsers(client, [userId]);
         }
         roomId = await createRoom({encryption, dmUserId: userId, spinner: false, andView: false});
         await _waitForMember(client, roomId, userId);
     }
     return roomId;
+}
+
+export function privateShouldBeEncrypted() {
+    const clientWellKnown = MatrixClientPeg.get().getClientWellKnown();
+    if (clientWellKnown && clientWellKnown[E2EE_WK_KEY]) {
+        const defaultDisabled = clientWellKnown[E2EE_WK_KEY]["default"] === false;
+        return !defaultDisabled;
+    }
+
+    return true;
 }
