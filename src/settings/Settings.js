@@ -28,7 +28,7 @@ import CustomStatusController from "./controllers/CustomStatusController";
 import ThemeController from './controllers/ThemeController';
 import PushToMatrixClientController from './controllers/PushToMatrixClientController';
 import ReloadOnChangeController from "./controllers/ReloadOnChangeController";
-import {RIGHT_PANEL_PHASES} from "../stores/RightPanelStorePhases";
+import {RightPanelPhases} from "../stores/RightPanelStorePhases";
 import FontSizeController from './controllers/FontSizeController';
 import SystemFontController from './controllers/SystemFontController';
 import UseSystemFontController from './controllers/UseSystemFontController';
@@ -103,12 +103,6 @@ export const SETTINGS = {
         supportedLevels: LEVELS_FEATURE,
         default: false,
     },
-    "feature_font_scaling": {
-        isFeature: true,
-        displayName: _td("Font scaling"),
-        supportedLevels: LEVELS_FEATURE,
-        default: false,
-    },
     "feature_pinning": {
         isFeature: true,
         displayName: _td("Message Pinning"),
@@ -146,24 +140,17 @@ export const SETTINGS = {
         supportedLevels: LEVELS_FEATURE,
         default: false,
     },
-    "feature_new_room_list": {
-        isFeature: true,
-        displayName: _td("Use the improved room list (will refresh to apply changes)"),
-        supportedLevels: LEVELS_FEATURE,
-        default: false,
-        controller: new ReloadOnChangeController(),
-    },
     "feature_custom_themes": {
         isFeature: true,
         displayName: _td("Support adding custom themes"),
         supportedLevels: LEVELS_FEATURE,
         default: false,
     },
-    "feature_irc_ui": {
-        supportedLevels: LEVELS_ACCOUNT_SETTINGS,
-        displayName: _td('Enable IRC layout option in the appearance tab'),
+    "advancedRoomListLogging": {
+        // TODO: Remove flag before launch: https://github.com/vector-im/riot-web/issues/14231
+        displayName: _td("Enable advanced debugging for the room list"),
+        supportedLevels: LEVELS_DEVICE_ONLY_SETTINGS,
         default: false,
-        isFeature: true,
     },
     "mjolnirRooms": {
         supportedLevels: ['account'],
@@ -178,6 +165,10 @@ export const SETTINGS = {
         supportedLevels: LEVELS_FEATURE,
         displayName: _td("Show info about bridges in room settings"),
         default: false,
+    },
+    "RoomList.backgroundImage": {
+        supportedLevels: LEVELS_ACCOUNT_SETTINGS,
+        default: null,
     },
     "baseFontSize": {
         displayName: _td("Font size"),
@@ -362,6 +353,12 @@ export const SETTINGS = {
         default: "en",
     },
     "breadcrumb_rooms": {
+        // not really a setting
+        supportedLevels: ['account'],
+        default: [],
+    },
+    "recent_emoji": {
+        // not really a setting
         supportedLevels: ['account'],
         default: [],
     },
@@ -478,11 +475,13 @@ export const SETTINGS = {
             deny: [],
         },
     },
+    // TODO: Remove setting: https://github.com/vector-im/riot-web/issues/14373
     "RoomList.orderAlphabetically": {
         supportedLevels: LEVELS_ACCOUNT_SETTINGS,
         displayName: _td("Order rooms by name"),
         default: false,
     },
+    // TODO: Remove setting: https://github.com/vector-im/riot-web/issues/14373
     "RoomList.orderByImportance": {
         supportedLevels: LEVELS_ACCOUNT_SETTINGS,
         displayName: _td("Show rooms with unread notifications first"),
@@ -535,11 +534,11 @@ export const SETTINGS = {
     },
     "lastRightPanelPhaseForRoom": {
         supportedLevels: LEVELS_DEVICE_ONLY_SETTINGS,
-        default: RIGHT_PANEL_PHASES.RoomMemberInfo,
+        default: RightPanelPhases.RoomMemberInfo,
     },
     "lastRightPanelPhaseForGroup": {
         supportedLevels: LEVELS_DEVICE_ONLY_SETTINGS,
-        default: RIGHT_PANEL_PHASES.GroupMemberList,
+        default: RightPanelPhases.GroupMemberList,
     },
     "enableEventIndexing": {
         supportedLevels: LEVELS_DEVICE_ONLY_SETTINGS,
@@ -572,7 +571,7 @@ export const SETTINGS = {
     },
     "useIRCLayout": {
         supportedLevels: LEVELS_ACCOUNT_SETTINGS,
-        displayName: _td("Use IRC layout"),
+        displayName: _td("Enable experimental, compact IRC style layout"),
         default: false,
     },
 };
