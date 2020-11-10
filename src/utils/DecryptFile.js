@@ -28,7 +28,7 @@ import {MatrixClientPeg} from '../MatrixClientPeg';
 // called createObjectURL(), and so if the content contains any scripting then it
 // will pose a XSS vulnerability when the browser renders it.  This is particularly
 // bad if the user right-clicks the URI and pastes it into a new window or tab,
-// as the blob will then execute with access to Riot's full JS environment(!)
+// as the blob will then execute with access to Element's full JS environment(!)
 //
 // See https://github.com/matrix-org/matrix-react-sdk/pull/1820#issuecomment-385210647
 // for details.
@@ -78,12 +78,13 @@ const ALLOWED_BLOB_MIMETYPES = {
 
 /**
  * Decrypt a file attached to a matrix event.
- * @param file {Object} The json taken from the matrix event.
+ * @param {Object} file The json taken from the matrix event.
  *   This passed to [link]{@link https://github.com/matrix-org/browser-encrypt-attachments}
  *   as the encryption info object, so will also have the those keys in addition to
  *   the keys below.
- * @param file.url {string} An mxc:// URL for the encrypted file.
- * @param file.mimetype {string} The MIME-type of the plaintext file.
+ * @param {string} file.url An mxc:// URL for the encrypted file.
+ * @param {string} file.mimetype The MIME-type of the plaintext file.
+ * @returns {Promise}
  */
 export function decryptFile(file) {
     const url = MatrixClientPeg.get().mxcUrlToHttp(file.url);

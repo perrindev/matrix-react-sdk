@@ -22,6 +22,7 @@ import ImageView from '../elements/ImageView';
 import {MatrixClientPeg} from '../../../MatrixClientPeg';
 import Modal from '../../../Modal';
 import * as Avatar from '../../../Avatar';
+import {ResizeMethod} from "../../../Avatar";
 
 interface IProps {
     // Room may be left unset here, but if it is,
@@ -32,7 +33,7 @@ interface IProps {
     oobData?: any;
     width?: number;
     height?: number;
-    resizeMethod?: string;
+    resizeMethod?: ResizeMethod;
     viewAvatarOnClick?: boolean;
 }
 
@@ -114,9 +115,12 @@ export default class RoomAvatar extends React.Component<IProps, IState> {
     }
 
     private onRoomAvatarClick = () => {
-        const avatarUrl = this.props.room.getAvatarUrl(
-            MatrixClientPeg.get().getHomeserverUrl(),
-            null, null, null, false);
+        const avatarUrl = Avatar.avatarUrlForRoom(
+            this.props.room,
+            null,
+            null,
+            null,
+        );
         const params = {
             src: avatarUrl,
             name: this.props.room.name,

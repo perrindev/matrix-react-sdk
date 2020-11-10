@@ -14,21 +14,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+import "matrix-js-sdk/src/@types/global"; // load matrix-js-sdk's type extensions first
 import * as ModernizrStatic from "modernizr";
 import ContentMessages from "../ContentMessages";
 import { IMatrixClientPeg } from "../MatrixClientPeg";
 import ToastStore from "../stores/ToastStore";
 import DeviceListener from "../DeviceListener";
-import RebrandListener from "../RebrandListener";
 import { RoomListStoreClass } from "../stores/room-list/RoomListStore";
 import { PlatformPeg } from "../PlatformPeg";
 import RoomListLayoutStore from "../stores/room-list/RoomListLayoutStore";
 import {IntegrationManagers} from "../integrations/IntegrationManagers";
 import {ModalManager} from "../Modal";
+import SettingsStore from "../settings/SettingsStore";
+import {ActiveRoomObserver} from "../ActiveRoomObserver";
+import {Notifier} from "../Notifier";
+import type {Renderer} from "react-dom";
+import RightPanelStore from "../stores/RightPanelStore";
+import WidgetStore from "../stores/WidgetStore";
+import CallHandler from "../CallHandler";
+import {Analytics} from "../Analytics";
+import CountlyAnalytics from "../CountlyAnalytics";
+import UserActivity from "../UserActivity";
+import {ModalWidgetStore} from "../stores/ModalWidgetStore";
 
 declare global {
     interface Window {
         Modernizr: ModernizrStatic;
+        matrixChat: ReturnType<Renderer>;
         mxMatrixClientPeg: IMatrixClientPeg;
         Olm: {
             init: () => Promise<void>;
@@ -37,17 +49,21 @@ declare global {
         mxContentMessages: ContentMessages;
         mxToastStore: ToastStore;
         mxDeviceListener: DeviceListener;
-        mxRebrandListener: RebrandListener;
         mxRoomListStore: RoomListStoreClass;
         mxRoomListLayoutStore: RoomListLayoutStore;
+        mxActiveRoomObserver: ActiveRoomObserver;
         mxPlatformPeg: PlatformPeg;
         mxIntegrationManagers: typeof IntegrationManagers;
         singletonModalManager: ModalManager;
-    }
-
-    // workaround for https://github.com/microsoft/TypeScript/issues/30933
-    interface ObjectConstructor {
-        fromEntries?(xs: [string|number|symbol, any][]): object;
+        mxSettingsStore: SettingsStore;
+        mxNotifier: typeof Notifier;
+        mxRightPanelStore: RightPanelStore;
+        mxWidgetStore: WidgetStore;
+        mxCallHandler: CallHandler;
+        mxAnalytics: Analytics;
+        mxCountlyAnalytics: typeof CountlyAnalytics;
+        mxUserActivity: UserActivity;
+        mxModalWidgetStore: ModalWidgetStore;
     }
 
     interface Document {
@@ -57,6 +73,9 @@ declare global {
 
     interface Navigator {
         userLanguage?: string;
+        // https://github.com/Microsoft/TypeScript/issues/19473
+        // https://developer.mozilla.org/en-US/docs/Web/API/MediaSession
+        mediaSession: any;
     }
 
     interface StorageEstimate {
@@ -74,5 +93,18 @@ declare global {
 
     interface PromiseConstructor {
         allSettled<T>(promises: Promise<T>[]): Promise<Array<ISettledFulfilled<T> | ISettledRejected>>;
+    }
+
+    interface HTMLAudioElement {
+        type?: string;
+    }
+
+    interface Error {
+        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/fileName
+        fileName?: string;
+        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/lineNumber
+        lineNumber?: number;
+        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/columnNumber
+        columnNumber?: number;
     }
 }

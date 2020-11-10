@@ -26,8 +26,9 @@ import dis from "./dispatcher/dispatcher";
 import * as Rooms from "./Rooms";
 import DMRoomMap from "./utils/DMRoomMap";
 import {getAddressType} from "./UserAddress";
-
-const E2EE_WK_KEY = "im.vector.riot.e2ee";
+import { getE2EEWellKnown } from "./utils/WellKnownUtils";
+import GroupStore from "./stores/GroupStore";
+import CountlyAnalytics from "./CountlyAnalytics";
 
 // we define a number of interfaces which take their names from the js-sdk
 /* eslint-disable camelcase */
@@ -80,6 +81,7 @@ interface IOpts {
     encryption?: boolean;
     inlineErrors?: boolean;
     andView?: boolean;
+    associatedWithCommunity?: string;
 }
 
 /**
@@ -106,6 +108,8 @@ export default function createRoom(opts: IOpts): Promise<string | null> {
     if (opts.spinner === undefined) opts.spinner = true;
     if (opts.guestAccess === undefined) opts.guestAccess = true;
     if (opts.encryption === undefined) opts.encryption = false;
+
+    const startTime = CountlyAnalytics.getTimestamp();
 
     const ErrorDialog = sdk.getComponent("dialogs.ErrorDialog");
     const Loader = sdk.getComponent("elements.Spinner");
@@ -182,6 +186,10 @@ export default function createRoom(opts: IOpts): Promise<string | null> {
         } else {
             return Promise.resolve();
         }
+    }).then(() => {
+        if (opts.associatedWithCommunity) {
+            return GroupStore.addRoomToGroup(opts.associatedWithCommunity, roomId, false);
+        }
     }).then(function() {
         // NB createRoom doesn't block on the client seeing the echo that the
         // room has been created, so we race here with the client knowing that
@@ -198,6 +206,7 @@ export default function createRoom(opts: IOpts): Promise<string | null> {
                 joining: true,
             });
         }
+        CountlyAnalytics.instance.trackRoomCreate(startTime, roomId);
         return roomId;
     }, function(err) {
         // Raise the error if the caller requested that we do so.
@@ -270,12 +279,17 @@ export async function _waitForMember(client: MatrixClient, roomId: string, userI
  * can encrypt to.
  */
 export async function canEncryptToAllUsers(client: MatrixClient, userIds: string[]) {
-    const usersDeviceMap = await client.downloadKeys(userIds);
-    // { "@user:host": { "DEVICE": {...}, ... }, ... }
-    return Object.values(usersDeviceMap).every((userDevices) =>
-        // { "DEVICE": {...}, ... }
-        Object.keys(userDevices).length > 0,
-    );
+    try {
+        const usersDeviceMap = await client.downloadKeys(userIds);
+        // { "@user:host": { "DEVICE": {...}, ... }, ... }
+        return Object.values(usersDeviceMap).every((userDevices) =>
+            // { "DEVICE": {...}, ... }
+            Object.keys(userDevices).length > 0,
+        );
+    } catch (e) {
+        console.error("Error determining if it's possible to encrypt to all users: ", e);
+        return false; // assume not
+    }
 }
 
 export async function ensureDMExists(client: MatrixClient, userId: string): Promise<string> {
@@ -284,9 +298,9 @@ export async function ensureDMExists(client: MatrixClient, userId: string): Prom
     if (existingDMRoom) {
         roomId = existingDMRoom.roomId;
     } else {
-        let encryption;
+        let encryption: boolean = undefined;
         if (privateShouldBeEncrypted()) {
-            encryption = canEncryptToAllUsers(client, [userId]);
+            encryption = await canEncryptToAllUsers(client, [userId]);
         }
         roomId = await createRoom({encryption, dmUserId: userId, spinner: false, andView: false});
         await _waitForMember(client, roomId, userId);
@@ -294,12 +308,11 @@ export async function ensureDMExists(client: MatrixClient, userId: string): Prom
     return roomId;
 }
 
-export function privateShouldBeEncrypted() {
-    const clientWellKnown = MatrixClientPeg.get().getClientWellKnown();
-    if (clientWellKnown && clientWellKnown[E2EE_WK_KEY]) {
-        const defaultDisabled = clientWellKnown[E2EE_WK_KEY]["default"] === false;
+export function privateShouldBeEncrypted(): boolean {
+    const e2eeWellKnown = getE2EEWellKnown();
+    if (e2eeWellKnown) {
+        const defaultDisabled = e2eeWellKnown["default"] === false;
         return !defaultDisabled;
     }
-
     return true;
 }

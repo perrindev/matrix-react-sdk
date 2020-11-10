@@ -38,12 +38,14 @@ import {inviteUsersToRoom} from "./RoomInvite";
 import { WidgetType } from "./widgets/WidgetType";
 import { Jitsi } from "./widgets/Jitsi";
 import { parseFragment as parseHtml } from "parse5";
-import sendBugReport from "./rageshake/submit-rageshake";
-import SdkConfig from "./SdkConfig";
+import BugReportDialog from "./components/views/dialogs/BugReportDialog";
 import { ensureDMExists } from "./createRoom";
 import { ViewUserPayload } from "./dispatcher/payloads/ViewUserPayload";
 import { Action } from "./dispatcher/actions";
-import { EffectiveMembership, getEffectiveMembership } from "./utils/membership";
+import { EffectiveMembership, getEffectiveMembership, leaveRoomBehaviour } from "./utils/membership";
+import SdkConfig from "./SdkConfig";
+import SettingsStore from "./settings/SettingsStore";
+import {UIFeature} from "./settings/UIFeature";
 
 // XXX: workaround for https://github.com/microsoft/TypeScript/issues/31816
 interface HTMLInputEvent extends Event {
@@ -88,6 +90,7 @@ interface ICommandOpts {
     runFn?: RunFn;
     category: string;
     hideCompletionAfterSpace?: boolean;
+    isEnabled?(): boolean;
 }
 
 export class Command {
@@ -98,6 +101,7 @@ export class Command {
     runFn: undefined | RunFn;
     category: string;
     hideCompletionAfterSpace: boolean;
+    _isEnabled?: () => boolean;
 
     constructor(opts: ICommandOpts) {
         this.command = opts.command;
@@ -107,6 +111,7 @@ export class Command {
         this.runFn = opts.runFn;
         this.category = opts.category || CommandCategories.other;
         this.hideCompletionAfterSpace = opts.hideCompletionAfterSpace || false;
+        this._isEnabled = opts.isEnabled;
     }
 
     getCommand() {
@@ -125,6 +130,10 @@ export class Command {
 
     getUsage() {
         return _t('Usage') + ': ' + this.getCommandWithArgs();
+    }
+
+    isEnabled() {
+        return this._isEnabled ? this._isEnabled() : true;
     }
 }
 
@@ -147,6 +156,19 @@ export const Commands = [
         description: _td('Prepends ¯\\_(ツ)_/¯ to a plain-text message'),
         runFn: function(roomId, args) {
             let message = '¯\\_(ツ)_/¯';
+            if (args) {
+                message = message + ' ' + args;
+            }
+            return success(MatrixClientPeg.get().sendTextMessage(roomId, message));
+        },
+        category: CommandCategories.messages,
+    }),
+    new Command({
+        command: 'lenny',
+        args: '<message>',
+        description: _td('Prepends ( ͡° ͜ʖ ͡°) to a plain-text message'),
+        runFn: function(roomId, args) {
+            let message = '( ͡° ͜ʖ ͡°)';
             if (args) {
                 message = message + ' ' + args;
             }
@@ -479,7 +501,7 @@ export const Commands = [
                     const parsedUrl = new URL(params[0]);
                     const hostname = parsedUrl.host || parsedUrl.hostname; // takes first non-falsey value
 
-                    // if we're using a Riot permalink handler, this will catch it before we get much further.
+                    // if we're using a Element permalink handler, this will catch it before we get much further.
                     // see below where we make assumptions about parsing the URL.
                     if (isPermalinkHost(hostname)) {
                         isPermalink = true;
@@ -495,6 +517,7 @@ export const Commands = [
                         action: 'view_room',
                         room_alias: roomAlias,
                         auto_join: true,
+                        _type: "slash_command", // instrumentation
                     });
                     return success();
                 } else if (params[0][0] === '!') {
@@ -509,6 +532,7 @@ export const Commands = [
                         },
                         via_servers: viaServers, // for the rejoin button
                         auto_join: true,
+                        _type: "slash_command", // instrumentation
                     });
                     return success();
                 } else if (isPermalink) {
@@ -533,6 +557,7 @@ export const Commands = [
                     const dispatch = {
                         action: 'view_room',
                         auto_join: true,
+                        _type: "slash_command", // instrumentation
                     };
 
                     if (entity[0] === '!') dispatch["room_id"] = entity;
@@ -601,11 +626,7 @@ export const Commands = [
             }
 
             if (!targetRoomId) targetRoomId = roomId;
-            return success(
-                cli.leaveRoomChain(targetRoomId).then(function() {
-                    dis.dispatch({action: 'view_next_room'});
-                }),
-            );
+            return success(leaveRoomBehaviour(targetRoomId));
         },
         category: CommandCategories.actions,
     }),
@@ -733,7 +754,7 @@ export const Commands = [
                         const cli = MatrixClientPeg.get();
                         const room = cli.getRoom(roomId);
                         if (!room) return reject(_t("Command failed"));
-                        const member = room.getMember(args);
+                        const member = room.getMember(userId);
                         if (!member || getEffectiveMembership(member.membership) === EffectiveMembership.Leave) {
                             return reject(_t("Could not find user in room"));
                         }
@@ -781,6 +802,7 @@ export const Commands = [
         command: 'addwidget',
         args: '<url | embed code | Jitsi url>',
         description: _td('Adds a custom widget by URL to the room'),
+        isEnabled: () => SettingsStore.getValue(UIFeature.Widgets),
         runFn: function(roomId, widgetUrl) {
             if (!widgetUrl) {
                 return reject(_t("Please supply a widget URL or embed code"));
@@ -864,12 +886,12 @@ export const Commands = [
                                 _t('WARNING: KEY VERIFICATION FAILED! The signing key for %(userId)s and session' +
                                     ' %(deviceId)s is "%(fprint)s" which does not match the provided key ' +
                                     '"%(fingerprint)s". This could mean your communications are being intercepted!',
-                                    {
-                                        fprint,
-                                        userId,
-                                        deviceId,
-                                        fingerprint,
-                                    }));
+                                {
+                                    fprint,
+                                    userId,
+                                    deviceId,
+                                    fingerprint,
+                                }));
                         }
 
                         await cli.setDeviceVerified(userId, deviceId, true);
@@ -883,7 +905,7 @@ export const Commands = [
                                     {
                                         _t('The signing key you provided matches the signing key you received ' +
                                             'from %(userId)s\'s session %(deviceId)s. Session marked as verified.',
-                                            {userId, deviceId})
+                                        {userId, deviceId})
                                     }
                                 </p>
                             </div>,
@@ -963,19 +985,13 @@ export const Commands = [
         command: "rageshake",
         aliases: ["bugreport"],
         description: _td("Send a bug report with logs"),
+        isEnabled: () => !!SdkConfig.get().bug_report_endpoint_url,
         args: "<description>",
         runFn: function(roomId, args) {
             return success(
-                sendBugReport(SdkConfig.get().bug_report_endpoint_url, {
-                    userText: args,
-                    sendLogs: true,
-                }).then(() => {
-                    const InfoDialog = sdk.getComponent('dialogs.InfoDialog');
-                    Modal.createTrackedDialog('Slash Commands', 'Rageshake sent', InfoDialog, {
-                        title: _t('Logs sent'),
-                        description: _t('Thank you!'),
-                    });
-                }),
+                Modal.createTrackedDialog('Slash Commands', 'Bug Report Dialog', BugReportDialog, {
+                    initialText: args,
+                }).finished,
             );
         },
         category: CommandCategories.advanced,
@@ -1047,7 +1063,7 @@ Commands.forEach(cmd => {
     });
 });
 
-export function parseCommandString(input) {
+export function parseCommandString(input: string) {
     // trim any trailing whitespace, as it can confuse the parser for
     // IRC-style commands
     input = input.replace(/\s+$/, '');
@@ -1074,10 +1090,10 @@ export function parseCommandString(input) {
  * processing the command, or 'promise' if a request was sent out.
  * Returns null if the input didn't match a command.
  */
-export function getCommand(roomId, input) {
+export function getCommand(roomId: string, input: string) {
     const {cmd, args} = parseCommandString(input);
 
-    if (CommandMap.has(cmd)) {
+    if (CommandMap.has(cmd) && CommandMap.get(cmd).isEnabled()) {
         return () => CommandMap.get(cmd).run(roomId, args, cmd);
     }
 }

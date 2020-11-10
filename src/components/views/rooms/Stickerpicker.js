@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 import React from 'react';
+import classNames from 'classnames';
 import {_t, _td} from '../../../languageHandler';
 import AppTile from '../elements/AppTile';
 import {MatrixClientPeg} from '../../../MatrixClientPeg';
@@ -21,7 +22,6 @@ import * as sdk from '../../../index';
 import dis from '../../../dispatcher/dispatcher';
 import AccessibleButton from '../elements/AccessibleButton';
 import WidgetUtils from '../../../utils/WidgetUtils';
-import ActiveWidgetStore from '../../../stores/ActiveWidgetStore';
 import PersistedElement from "../elements/PersistedElement";
 import {IntegrationManagers} from "../../../integrations/IntegrationManagers";
 import SettingsStore from "../../../settings/SettingsStore";
@@ -29,6 +29,7 @@ import {ContextMenu} from "../../structures/ContextMenu";
 import {WidgetType} from "../../../widgets/WidgetType";
 import AccessibleTooltipButton from "../elements/AccessibleTooltipButton";
 import {Action} from "../../../dispatcher/actions";
+import {WidgetMessagingStore} from "../../../stores/widgets/WidgetMessagingStore";
 
 // This should be below the dialog level (4000), but above the rest of the UI (1000-2000).
 // We sit in a context menu, so this should be given to the context menu.
@@ -211,9 +212,11 @@ export default class Stickerpicker extends React.Component {
 
     _sendVisibilityToWidget(visible) {
         if (!this.state.stickerpickerWidget) return;
-        const widgetMessaging = ActiveWidgetStore.getWidgetMessaging(this.state.stickerpickerWidget.id);
-        if (widgetMessaging && visible !== this._prevSentVisibility) {
-            widgetMessaging.sendVisibility(visible);
+        const messaging = WidgetMessagingStore.instance.getMessagingForId(this.state.stickerpickerWidget.id);
+        if (messaging && visible !== this._prevSentVisibility) {
+            messaging.updateVisibility(visible).catch(err => {
+                console.error("Error updating widget visibility: ", err);
+            });
             this._prevSentVisibility = visible;
         }
     }
@@ -269,13 +272,10 @@ export default class Stickerpicker extends React.Component {
                             userId={MatrixClientPeg.get().credentials.userId}
                             creatorUserId={stickerpickerWidget.sender || MatrixClientPeg.get().credentials.userId}
                             waitForIframeLoad={true}
-                            show={true}
                             showMenubar={true}
                             onEditClick={this._launchManageIntegrations}
                             onDeleteClick={this._removeStickerpickerWidgets}
                             showTitle={false}
-                            showMinimise={true}
-                            showDelete={false}
                             showCancel={false}
                             showPopout={false}
                             onMinimiseClick={this._onHideStickersClick}
@@ -362,7 +362,7 @@ export default class Stickerpicker extends React.Component {
      */
     _launchManageIntegrations() {
         // TODO: Open the right integration manager for the widget
-        if (SettingsStore.isFeatureEnabled("feature_many_integration_managers")) {
+        if (SettingsStore.getValue("feature_many_integration_managers")) {
             IntegrationManagers.sharedInstance().openAll(
                 this.props.room,
                 `type_${WidgetType.STICKERPICKER.preferred}`,
@@ -380,14 +380,21 @@ export default class Stickerpicker extends React.Component {
     render() {
         let stickerPicker;
         let stickersButton;
+        const className = classNames(
+            "mx_MessageComposer_button",
+            "mx_MessageComposer_stickers",
+            "mx_Stickers_hideStickers",
+            "mx_MessageComposer_button_highlight",
+        );
         if (this.state.showStickers) {
             // Show hide-stickers button
             stickersButton =
                 <AccessibleButton
                     id='stickersButton'
                     key="controls_hide_stickers"
-                    className="mx_MessageComposer_button mx_MessageComposer_stickers mx_Stickers_hideStickers"
+                    className={className}
                     onClick={this._onHideStickersClick}
+                    active={this.state.showStickers}
                     title={_t("Hide Stickers")}
                 >
                 </AccessibleButton>;

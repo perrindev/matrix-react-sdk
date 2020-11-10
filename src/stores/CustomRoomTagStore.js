@@ -46,7 +46,7 @@ function commonPrefix(a, b) {
     return "";
 }
 /**
- * A class for storing application state for ordering tags in the TagPanel.
+ * A class for storing application state for ordering tags in the GroupFilterPanel.
  */
 class CustomRoomTagStore extends EventEmitter {
     constructor() {
@@ -137,7 +137,7 @@ class CustomRoomTagStore extends EventEmitter {
     }
 
     _getUpdatedTags() {
-        if (!SettingsStore.isFeatureEnabled("feature_custom_tags")) {
+        if (!SettingsStore.getValue("feature_custom_tags")) {
             return {}; // none
         }
 

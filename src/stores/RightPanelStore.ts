@@ -17,10 +17,11 @@ limitations under the License.
 import dis from '../dispatcher/dispatcher';
 import {pendingVerificationRequestForUser} from '../verification';
 import {Store} from 'flux/utils';
-import SettingsStore, {SettingLevel} from "../settings/SettingsStore";
+import SettingsStore from "../settings/SettingsStore";
 import {RightPanelPhases, RIGHT_PANEL_PHASES_NO_ARGS} from "./RightPanelStorePhases";
 import {ActionPayload} from "../dispatcher/payloads";
 import {Action} from '../dispatcher/actions';
+import { SettingLevel } from "../settings/SettingLevel";
 
 interface RightPanelStoreState {
     // Whether or not to show the right panel at all. We split out rooms and groups
@@ -31,6 +32,8 @@ interface RightPanelStoreState {
     // The last phase (screen) the right panel was showing
     lastRoomPhase: RightPanelPhases;
     lastGroupPhase: RightPanelPhases;
+
+    previousPhase?: RightPanelPhases;
 
     // Extra information about the last phase
     lastRoomPhaseParams: {[key: string]: any};
@@ -86,6 +89,10 @@ export default class RightPanelStore extends Store<ActionPayload> {
 
     get groupPanelPhase(): RightPanelPhases {
         return this.state.lastGroupPhase;
+    }
+
+    get previousPhase(): RightPanelPhases | null {
+        return RIGHT_PANEL_PHASES_NO_ARGS.includes(this.state.previousPhase) ? this.state.previousPhase : null;
     }
 
     get visibleRoomPanelPhase(): RightPanelPhases {
@@ -175,23 +182,27 @@ export default class RightPanelStore extends Store<ActionPayload> {
                     if (targetPhase === this.state.lastGroupPhase) {
                         this.setState({
                             showGroupPanel: !this.state.showGroupPanel,
+                            previousPhase: null,
                         });
                     } else {
                         this.setState({
                             lastGroupPhase: targetPhase,
                             showGroupPanel: true,
+                            previousPhase: this.state.lastGroupPhase,
                         });
                     }
                 } else {
                     if (targetPhase === this.state.lastRoomPhase && !refireParams) {
                         this.setState({
                             showRoomPanel: !this.state.showRoomPanel,
+                            previousPhase: null,
                         });
                     } else {
                         this.setState({
                             lastRoomPhase: targetPhase,
                             showRoomPanel: true,
                             lastRoomPhaseParams: refireParams || {},
+                            previousPhase: this.state.lastRoomPhase,
                         });
                     }
                 }
@@ -222,3 +233,5 @@ export default class RightPanelStore extends Store<ActionPayload> {
         return RightPanelStore.instance;
     }
 }
+
+window.mxRightPanelStore = RightPanelStore.getSharedInstance();

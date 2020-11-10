@@ -16,7 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-import React, {CSSProperties, useRef, useState} from "react";
+import React, {CSSProperties, RefObject, useRef, useState} from "react";
 import ReactDOM from "react-dom";
 import classNames from "classnames";
 
@@ -58,7 +58,7 @@ export enum ChevronFace {
     None = "none",
 }
 
-interface IProps extends IPosition {
+export interface IProps extends IPosition {
     menuWidth?: number;
     menuHeight?: number;
 
@@ -233,8 +233,7 @@ export class ContextMenu extends React.PureComponent<IProps, IState> {
         switch (ev.key) {
             case Key.TAB:
             case Key.ESCAPE:
-            // close on left and right arrows too for when it is a context menu on a <Toolbar />
-            case Key.ARROW_LEFT:
+            case Key.ARROW_LEFT: // close on left and right arrows too for when it is a context menu on a <Toolbar />
             case Key.ARROW_RIGHT:
                 this.props.onFinished();
                 break;
@@ -417,8 +416,9 @@ export const aboveLeftOf = (elementRect: DOMRect, chevronFace = ChevronFace.None
     return menuOptions;
 };
 
-export const useContextMenu = () => {
-    const button = useRef(null);
+type ContextMenuTuple<T> = [boolean, RefObject<T>, () => void, () => void, (val: boolean) => void];
+export const useContextMenu = <T extends any = HTMLElement>(): ContextMenuTuple<T> => {
+    const button = useRef<T>(null);
     const [isOpen, setIsOpen] = useState(false);
     const open = () => {
         setIsOpen(true);

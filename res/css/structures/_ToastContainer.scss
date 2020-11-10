@@ -80,8 +80,9 @@ limitations under the License.
                 }
             }
 
-            &.mx_Toast_icon_element_logo::after {
-                background-image: url("$(res)/img/element-logo.svg");
+            &.mx_Toast_icon_secure_backup::after {
+                mask-image: url('$(res)/img/feather-customised/secure-backup.svg');
+                background-color: $primary-fg-color;
             }
 
             .mx_Toast_title, .mx_Toast_body {

@@ -31,7 +31,7 @@ interface IProps {
     // The badge to display above the icon
     badge?: React.ReactNode;
     // The parameters to track the click event
-    analytics: string[];
+    analytics: Parameters<typeof Analytics.trackEvent>;
 
     // Button name
     name: string;
@@ -39,6 +39,8 @@ interface IProps {
     title: string;
 }
 
+// TODO: replace this, the composer buttons and the right panel buttons with a unified
+// representation
 export default class HeaderButton extends React.Component<IProps> {
     constructor(props: IProps) {
         super(props);

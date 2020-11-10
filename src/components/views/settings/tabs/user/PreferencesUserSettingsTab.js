@@ -17,12 +17,12 @@ limitations under the License.
 
 import React from 'react';
 import {_t} from "../../../../../languageHandler";
-import {SettingLevel} from "../../../../../settings/SettingsStore";
 import LabelledToggleSwitch from "../../../elements/LabelledToggleSwitch";
 import SettingsStore from "../../../../../settings/SettingsStore";
 import Field from "../../../elements/Field";
 import * as sdk from "../../../../..";
 import PlatformPeg from "../../../../../PlatformPeg";
+import {SettingLevel} from "../../../../../settings/SettingLevel";
 
 export default class PreferencesUserSettingsTab extends React.Component {
     static ROOM_LIST_SETTINGS = [
@@ -49,11 +49,10 @@ export default class PreferencesUserSettingsTab extends React.Component {
         'showAvatarChanges',
         'showDisplaynameChanges',
         'showImages',
+        'Pill.shouldShowPillAvatar',
     ];
 
-    static ADVANCED_SETTINGS = [
-        'alwaysShowEncryptionIcons',
-        'Pill.shouldShowPillAvatar',
+    static GENERAL_SETTINGS = [
         'TagPanel.enableTagPanel',
         'promptBeforeInviteUnknownUsers',
         // Start automatically after startup (electron-only)
@@ -139,7 +138,9 @@ export default class PreferencesUserSettingsTab extends React.Component {
 
     _renderGroup(settingIds) {
         const SettingsFlag = sdk.getComponent("views.elements.SettingsFlag");
-        return settingIds.map(i => <SettingsFlag key={i} name={i} level={SettingLevel.ACCOUNT} />);
+        return settingIds.filter(SettingsStore.isEnabled).map(i => {
+            return <SettingsFlag key={i} name={i} level={SettingLevel.ACCOUNT} />;
+        });
     }
 
     render() {
@@ -187,8 +188,8 @@ export default class PreferencesUserSettingsTab extends React.Component {
                 </div>
 
                 <div className="mx_SettingsTab_section">
-                    <span className="mx_SettingsTab_subheading">{_t("Advanced")}</span>
-                    {this._renderGroup(PreferencesUserSettingsTab.ADVANCED_SETTINGS)}
+                    <span className="mx_SettingsTab_subheading">{_t("General")}</span>
+                    {this._renderGroup(PreferencesUserSettingsTab.GENERAL_SETTINGS)}
                     {minimizeToTrayOption}
                     {autoHideMenuOption}
                     {autoLaunchOption}

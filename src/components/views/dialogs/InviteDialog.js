@@ -32,11 +32,15 @@ import IdentityAuthClient from "../../../IdentityAuthClient";
 import Modal from "../../../Modal";
 import {humanizeTime} from "../../../utils/humanize";
 import createRoom, {canEncryptToAllUsers, privateShouldBeEncrypted} from "../../../createRoom";
-import {inviteMultipleToRoom} from "../../../RoomInvite";
+import {inviteMultipleToRoom, showCommunityInviteDialog} from "../../../RoomInvite";
 import {Key} from "../../../Keyboard";
 import {Action} from "../../../dispatcher/actions";
 import {DefaultTagID} from "../../../stores/room-list/models";
 import RoomListStore from "../../../stores/room-list/RoomListStore";
+import {CommunityPrototypeStore} from "../../../stores/CommunityPrototypeStore";
+import SettingsStore from "../../../settings/SettingsStore";
+import {UIFeature} from "../../../settings/UIFeature";
+import CountlyAnalytics from "../../../CountlyAnalytics";
 
 // we have a number of types defined from the Matrix spec which can't reasonably be altered here.
 /* eslint-disable camelcase */
@@ -322,12 +326,14 @@ export default class InviteDialog extends React.PureComponent {
             room.getMembersWithMembership('join').forEach(m => alreadyInvited.add(m.userId));
             // add banned users, so we don't try to invite them
             room.getMembersWithMembership('ban').forEach(m => alreadyInvited.add(m.userId));
+
+            CountlyAnalytics.instance.trackBeginInvite(props.roomId);
         }
 
         this.state = {
             targets: [], // array of Member objects (see interface above)
             filterText: "",
-            recents: this._buildRecents(alreadyInvited),
+            recents: InviteDialog.buildRecents(alreadyInvited),
             numRecentsShown: INITIAL_ROOMS_SHOWN,
             suggestions: this._buildSuggestions(alreadyInvited),
             numSuggestionsShown: INITIAL_ROOMS_SHOWN,
@@ -344,7 +350,7 @@ export default class InviteDialog extends React.PureComponent {
         this._editorRef = createRef();
     }
 
-    _buildRecents(excludedTargetIds: Set<string>): {userId: string, user: RoomMember, lastActive: number} {
+    static buildRecents(excludedTargetIds: Set<string>): {userId: string, user: RoomMember, lastActive: number} {
         const rooms = DMRoomMap.shared().getUniqueRoomsWithIndividuals(); // map of userId => js-sdk Room
 
         // Also pull in all the rooms tagged as DefaultTagID.DM so we don't miss anything. Sometimes the
@@ -548,7 +554,7 @@ export default class InviteDialog extends React.PureComponent {
         if (this.state.filterText.startsWith('@')) {
             // Assume mxid
             newMember = new DirectoryMember({user_id: this.state.filterText, display_name: null, avatar_url: null});
-        } else {
+        } else if (SettingsStore.getValue(UIFeature.IdentityServer)) {
             // Assume email
             newMember = new ThreepidMember(this.state.filterText);
         }
@@ -624,6 +630,7 @@ export default class InviteDialog extends React.PureComponent {
     };
 
     _inviteUsers = () => {
+        const startTime = CountlyAnalytics.getTimestamp();
         this.setState({busy: true});
         this._convertFilter();
         const targets = this._convertFilter();
@@ -640,6 +647,7 @@ export default class InviteDialog extends React.PureComponent {
         }
 
         inviteMultipleToRoom(this.props.roomId, targetIds).then(result => {
+            CountlyAnalytics.instance.trackSendInvite(startTime, this.props.roomId, targetIds.length);
             if (!this._shouldAbortAfterInviteError(result)) { // handles setting error message too
                 this.props.onFinished();
             }
@@ -733,7 +741,7 @@ export default class InviteDialog extends React.PureComponent {
                 this.setState({tryingIdentityServer: true});
                 return;
             }
-            if (term.indexOf('@') > 0 && Email.looksValid(term)) {
+            if (term.indexOf('@') > 0 && Email.looksValid(term) && SettingsStore.getValue(UIFeature.IdentityServer)) {
                 // Start off by suggesting the plain email while we try and resolve it
                 // to a real account.
                 this.setState({
@@ -909,12 +917,23 @@ export default class InviteDialog extends React.PureComponent {
         this.props.onFinished();
     };
 
+    _onCommunityInviteClick = (e) => {
+        this.props.onFinished();
+        showCommunityInviteDialog(CommunityPrototypeStore.instance.getSelectedCommunityId());
+    };
+
     _renderSection(kind: "recents"|"suggestions") {
         let sourceMembers = kind === 'recents' ? this.state.recents : this.state.suggestions;
         let showNum = kind === 'recents' ? this.state.numRecentsShown : this.state.numSuggestionsShown;
         const showMoreFn = kind === 'recents' ? this._showMoreRecents.bind(this) : this._showMoreSuggestions.bind(this);
         const lastActive = (m) => kind === 'recents' ? m.lastActive : null;
         let sectionName = kind === 'recents' ? _t("Recent Conversations") : _t("Suggestions");
+        let sectionSubname = null;
+
+        if (kind === 'suggestions' && CommunityPrototypeStore.instance.getSelectedCommunityId()) {
+            const communityName = CommunityPrototypeStore.instance.getSelectedCommunityName();
+            sectionSubname = _t("May include members not in %(communityName)s", {communityName});
+        }
 
         if (this.props.kind === KIND_INVITE) {
             sectionName = kind === 'recents' ? _t("Recently Direct Messaged") : _t("Suggestions");
@@ -993,6 +1012,7 @@ export default class InviteDialog extends React.PureComponent {
         return (
             <div className='mx_InviteDialog_section'>
                 <h3>{sectionName}</h3>
+                {sectionSubname ? <p className="mx_InviteDialog_subname">{sectionSubname}</p> : null}
                 {tiles}
                 {showMore}
             </div>
@@ -1024,7 +1044,9 @@ export default class InviteDialog extends React.PureComponent {
     }
 
     _renderIdentityServerWarning() {
-        if (!this.state.tryingIdentityServer || this.state.canUseIdentityServer) {
+        if (!this.state.tryingIdentityServer || this.state.canUseIdentityServer ||
+            !SettingsStore.getValue(UIFeature.IdentityServer)
+        ) {
             return null;
         }
 
@@ -1073,30 +1095,92 @@ export default class InviteDialog extends React.PureComponent {
         let buttonText;
         let goButtonFn;
 
+        const identityServersEnabled = SettingsStore.getValue(UIFeature.IdentityServer);
+
         const userId = MatrixClientPeg.get().getUserId();
         if (this.props.kind === KIND_DM) {
             title = _t("Direct Messages");
-            helpText = _t(
-                "Start a conversation with someone using their name, username (like <userId/>) or email address.",
-                {},
-                {userId: () => {
-                    return <a href={makeUserPermalink(userId)} rel="noreferrer noopener" target="_blank">{userId}</a>;
-                }},
-            );
+
+            if (identityServersEnabled) {
+                helpText = _t(
+                    "Start a conversation with someone using their name, username (like <userId/>) or email address.",
+                    {},
+                    {userId: () => {
+                        return (
+                            <a href={makeUserPermalink(userId)} rel="noreferrer noopener" target="_blank">{userId}</a>
+                        );
+                    }},
+                );
+            } else {
+                helpText = _t(
+                    "Start a conversation with someone using their name or username (like <userId/>).",
+                    {},
+                    {userId: () => {
+                        return (
+                            <a href={makeUserPermalink(userId)} rel="noreferrer noopener" target="_blank">{userId}</a>
+                        );
+                    }},
+                );
+            }
+
+            if (CommunityPrototypeStore.instance.getSelectedCommunityId()) {
+                const communityName = CommunityPrototypeStore.instance.getSelectedCommunityName();
+                const inviteText = _t("This won't invite them to %(communityName)s. " +
+                    "To invite someone to %(communityName)s, click <a>here</a>",
+                    {communityName}, {
+                        userId: () => {
+                            return (
+                                <a
+                                    href={makeUserPermalink(userId)}
+                                    rel="noreferrer noopener"
+                                    target="_blank"
+                                >{userId}</a>
+                            );
+                        },
+                        a: (sub) => {
+                            return (
+                                <AccessibleButton
+                                    kind="link"
+                                    onClick={this._onCommunityInviteClick}
+                                >{sub}</AccessibleButton>
+                            );
+                        },
+                    },
+                );
+                helpText = <React.Fragment>
+                    { helpText } {inviteText}
+                </React.Fragment>;
+            }
             buttonText = _t("Go");
             goButtonFn = this._startDm;
         } else { // KIND_INVITE
             title = _t("Invite to this room");
-            helpText = _t(
-                "Invite someone using their name, username (like <userId/>), email address or <a>share this room</a>.",
-                {},
-                {
-                    userId: () =>
-                        <a href={makeUserPermalink(userId)} rel="noreferrer noopener" target="_blank">{userId}</a>,
-                    a: (sub) =>
-                        <a href={makeRoomPermalink(this.props.roomId)} rel="noreferrer noopener" target="_blank">{sub}</a>,
-                },
-            );
+
+            if (identityServersEnabled) {
+                helpText = _t(
+                    "Invite someone using their name, username (like <userId/>), email address or " +
+                        "<a>share this room</a>.",
+                    {},
+                    {
+                        userId: () =>
+                            <a href={makeUserPermalink(userId)} rel="noreferrer noopener" target="_blank">{userId}</a>,
+                        a: (sub) =>
+                            <a href={makeRoomPermalink(this.props.roomId)} rel="noreferrer noopener" target="_blank">{sub}</a>,
+                    },
+                );
+            } else {
+                helpText = _t(
+                    "Invite someone using their name, username (like <userId/>) or <a>share this room</a>.",
+                    {},
+                    {
+                        userId: () =>
+                            <a href={makeUserPermalink(userId)} rel="noreferrer noopener" target="_blank">{userId}</a>,
+                        a: (sub) =>
+                            <a href={makeRoomPermalink(this.props.roomId)} rel="noreferrer noopener" target="_blank">{sub}</a>,
+                    },
+                );
+            }
+
             buttonText = _t("Invite");
             goButtonFn = this._inviteUsers;
         }
