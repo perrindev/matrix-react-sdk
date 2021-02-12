@@ -18,7 +18,6 @@ limitations under the License.
 
 import React, {createRef} from 'react';
 import PropTypes from 'prop-types';
-import url from 'url';
 import classnames from 'classnames';
 
 import * as sdk from '../../../index';
@@ -421,12 +420,12 @@ export class EmailIdentityAuthEntry extends React.Component {
             return <Spinner />;
         } else {
             return (
-                <div>
-                    <p>{ _t("An email has been sent to %(emailAddress)s",
-                        { emailAddress: (sub) => <i>{ this.props.inputs.emailAddress }</i> },
+                <div className="mx_InteractiveAuthEntryComponents_emailWrapper">
+                    <p>{ _t("A confirmation email has been sent to %(emailAddress)s",
+                        { emailAddress: (sub) => <b>{ this.props.inputs.emailAddress }</b> },
                     ) }
                     </p>
-                    <p>{ _t("Please check your email to continue registration.") }</p>
+                    <p>{ _t("Open the link in the email to continue registration.") }</p>
                 </div>
             );
         }
@@ -500,16 +499,10 @@ export class MsisdnAuthEntry extends React.Component {
         });
 
         try {
-            const requiresIdServerParam =
-                await this.props.matrixClient.doesServerRequireIdServerParam();
             let result;
             if (this._submitUrl) {
                 result = await this.props.matrixClient.submitMsisdnTokenOtherUrl(
                     this._submitUrl, this._sid, this.props.clientSecret, this.state.token,
-                );
-            } else if (requiresIdServerParam) {
-                result = await this.props.matrixClient.submitMsisdnToken(
-                    this._sid, this.props.clientSecret, this.state.token,
                 );
             } else {
                 throw new Error("The registration with MSISDN flow is misconfigured");
@@ -519,12 +512,6 @@ export class MsisdnAuthEntry extends React.Component {
                     sid: this._sid,
                     client_secret: this.props.clientSecret,
                 };
-                if (requiresIdServerParam) {
-                    const idServerParsedUrl = url.parse(
-                        this.props.matrixClient.getIdentityServerUrl(),
-                    );
-                    creds.id_server = idServerParsedUrl.host;
-                }
                 this.props.submitAuthDict({
                     type: MsisdnAuthEntry.LOGIN_TYPE,
                     // TODO: Remove `threepid_creds` once servers support proper UIA
@@ -622,8 +609,12 @@ export class SSOAuthEntry extends React.Component {
             this.props.authSessionId,
         );
 
+        this._popupWindow = null;
+        window.addEventListener("message", this._onReceiveMessage);
+
         this.state = {
             phase: SSOAuthEntry.PHASE_PREAUTH,
+            attemptFailed: false,
         };
     }
 
@@ -631,12 +622,35 @@ export class SSOAuthEntry extends React.Component {
         this.props.onPhaseChange(SSOAuthEntry.PHASE_PREAUTH);
     }
 
+    componentWillUnmount() {
+        window.removeEventListener("message", this._onReceiveMessage);
+        if (this._popupWindow) {
+            this._popupWindow.close();
+            this._popupWindow = null;
+        }
+    }
+
+    attemptFailed = () => {
+        this.setState({
+            attemptFailed: true,
+        });
+    };
+
+    _onReceiveMessage = event => {
+        if (event.data === "authDone" && event.origin === this.props.matrixClient.getHomeserverUrl()) {
+            if (this._popupWindow) {
+                this._popupWindow.close();
+                this._popupWindow = null;
+            }
+        }
+    };
+
     onStartAuthClick = () => {
         // Note: We don't use PlatformPeg's startSsoAuth functions because we almost
         // certainly will need to open the thing in a new tab to avoid losing application
         // context.
 
-        window.open(this._ssoUrl, '_blank');
+        this._popupWindow = window.open(this._ssoUrl, "_blank");
         this.setState({phase: SSOAuthEntry.PHASE_POSTAUTH});
         this.props.onPhaseChange(SSOAuthEntry.PHASE_POSTAUTH);
     };
@@ -669,10 +683,28 @@ export class SSOAuthEntry extends React.Component {
             );
         }
 
-        return <div className='mx_InteractiveAuthEntryComponents_sso_buttons'>
-            {cancelButton}
-            {continueButton}
-        </div>;
+        let errorSection;
+        if (this.props.errorText) {
+            errorSection = (
+                <div className="error" role="alert">
+                    { this.props.errorText }
+                </div>
+            );
+        } else if (this.state.attemptFailed) {
+            errorSection = (
+                <div className="error" role="alert">
+                    { _t("Something went wrong in confirming your identity. Cancel and try again.") }
+                </div>
+            );
+        }
+
+        return <React.Fragment>
+            { errorSection }
+            <div className="mx_InteractiveAuthEntryComponents_sso_buttons">
+                {cancelButton}
+                {continueButton}
+            </div>
+        </React.Fragment>;
     }
 }
 
@@ -723,8 +755,7 @@ export class FallbackAuthEntry extends React.Component {
             this.props.loginType,
             this.props.authSessionId,
         );
-        this._popupWindow = window.open(url);
-        this._popupWindow.opener = null;
+        this._popupWindow = window.open(url, "_blank");
     };
 
     _onReceiveMessage = event => {

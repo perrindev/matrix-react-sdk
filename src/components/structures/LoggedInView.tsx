@@ -21,7 +21,7 @@ import * as PropTypes from 'prop-types';
 import { MatrixClient } from 'matrix-js-sdk/src/client';
 import { DragDropContext } from 'react-beautiful-dnd';
 
-import {Key, isOnlyCtrlOrCmdKeyEvent, isOnlyCtrlOrCmdIgnoreShiftKeyEvent} from '../../Keyboard';
+import {Key, isOnlyCtrlOrCmdKeyEvent, isOnlyCtrlOrCmdIgnoreShiftKeyEvent, isMac} from '../../Keyboard';
 import PageTypes from '../../PageTypes';
 import CallMediaHandler from '../../CallMediaHandler';
 import { fixupColorFonts } from '../../utils/FontManager';
@@ -52,6 +52,7 @@ import RoomListStore from "../../stores/room-list/RoomListStore";
 import NonUrgentToastContainer from "./NonUrgentToastContainer";
 import { ToggleRightPanelPayload } from "../../dispatcher/payloads/ToggleRightPanelPayload";
 import { IThreepidInvite } from "../../stores/ThreepidInviteStore";
+import Modal from "../../Modal";
 import { ICollapseConfig } from "../../resizer/distributors/collapse";
 
 // We need to fetch each pinned message individually (if we don't already have it)
@@ -88,6 +89,7 @@ interface IProps {
     currentUserId?: string;
     currentGroupId?: string;
     currentGroupIsNew?: boolean;
+    justRegistered?: boolean;
 }
 
 interface IUsageLimit {
@@ -138,7 +140,7 @@ class LoggedInView extends React.Component<IProps, IState> {
     protected readonly _matrixClient: MatrixClient;
     protected readonly _roomView: React.RefObject<any>;
     protected readonly _resizeContainer: React.RefObject<ResizeHandle>;
-    protected readonly _compactLayoutWatcherRef: string;
+    protected compactLayoutWatcherRef: string;
     protected resizer: Resizer;
 
     constructor(props, context) {
@@ -155,18 +157,6 @@ class LoggedInView extends React.Component<IProps, IState> {
 
         CallMediaHandler.loadDevices();
 
-        document.addEventListener('keydown', this._onNativeKeyDown, false);
-
-        this._updateServerNoticeEvents();
-
-        this._matrixClient.on("accountData", this.onAccountData);
-        this._matrixClient.on("sync", this.onSync);
-        this._matrixClient.on("RoomState.events", this.onRoomStateEvents);
-
-        this._compactLayoutWatcherRef = SettingsStore.watchSetting(
-            "useCompactLayout", null, this.onCompactLayoutChanged,
-        );
-
         fixupColorFonts();
 
         this._roomView = React.createRef();
@@ -174,6 +164,24 @@ class LoggedInView extends React.Component<IProps, IState> {
     }
 
     componentDidMount() {
+        document.addEventListener('keydown', this._onNativeKeyDown, false);
+
+        this._updateServerNoticeEvents();
+
+        this._matrixClient.on("accountData", this.onAccountData);
+        this._matrixClient.on("sync", this.onSync);
+        // Call `onSync` with the current state as well
+        this.onSync(
+            this._matrixClient.getSyncState(),
+            null,
+            this._matrixClient.getSyncStateData(),
+        );
+        this._matrixClient.on("RoomState.events", this.onRoomStateEvents);
+
+        this.compactLayoutWatcherRef = SettingsStore.watchSetting(
+            "useCompactLayout", null, this.onCompactLayoutChanged,
+        );
+
         this.resizer = this._createResizer();
         this.resizer.attach();
         this._loadResizerPreferences();
@@ -184,7 +192,7 @@ class LoggedInView extends React.Component<IProps, IState> {
         this._matrixClient.removeListener("accountData", this.onAccountData);
         this._matrixClient.removeListener("sync", this.onSync);
         this._matrixClient.removeListener("RoomState.events", this.onRoomStateEvents);
-        SettingsStore.unwatchSetting(this._compactLayoutWatcherRef);
+        SettingsStore.unwatchSetting(this.compactLayoutWatcherRef);
         this.resizer.detach();
     }
 
@@ -391,6 +399,7 @@ class LoggedInView extends React.Component<IProps, IState> {
         const ctrlCmdOnly = isOnlyCtrlOrCmdKeyEvent(ev);
         const hasModifier = ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey;
         const isModifier = ev.key === Key.ALT || ev.key === Key.CONTROL || ev.key === Key.META || ev.key === Key.SHIFT;
+        const modKey = isMac ? ev.metaKey : ev.ctrlKey;
 
         switch (ev.key) {
             case Key.PAGE_UP:
@@ -416,6 +425,14 @@ class LoggedInView extends React.Component<IProps, IState> {
                     handled = true;
                 }
                 break;
+            case Key.F:
+                if (ctrlCmdOnly && SettingsStore.getValue("ctrlFForSearch")) {
+                    dis.dispatch({
+                        action: 'focus_search',
+                    });
+                    handled = true;
+                }
+                break;
             case Key.BACKTICK:
                 // Ideally this would be CTRL+P for "Profile", but that's
                 // taken by the print dialog. CTRL+I for "Information"
@@ -431,6 +448,16 @@ class LoggedInView extends React.Component<IProps, IState> {
             case Key.SLASH:
                 if (isOnlyCtrlOrCmdIgnoreShiftKeyEvent(ev)) {
                     KeyboardShortcuts.toggleDialog();
+                    handled = true;
+                }
+                break;
+
+            case Key.H:
+                if (ev.altKey && modKey) {
+                    dis.dispatch({
+                        action: 'view_home_page',
+                    });
+                    Modal.closeCurrentModal("homeKeyboardShortcut");
                     handled = true;
                 }
                 break;
@@ -573,7 +600,7 @@ class LoggedInView extends React.Component<IProps, IState> {
                 break;
 
             case PageTypes.HomePage:
-                pageElement = <HomePage />;
+                pageElement = <HomePage justRegistered={this.props.justRegistered} />;
                 break;
 
             case PageTypes.UserView:

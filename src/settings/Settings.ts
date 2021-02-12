@@ -32,6 +32,7 @@ import UseSystemFontController from './controllers/UseSystemFontController';
 import { SettingLevel } from "./SettingLevel";
 import SettingController from "./controllers/SettingController";
 import { RightPanelPhases } from "../stores/RightPanelStorePhases";
+import { isMac } from '../Keyboard';
 import UIFeatureController from "./controllers/UIFeatureController";
 import { UIFeature } from "./UIFeature";
 import { OrderedMultiController } from "./controllers/OrderedMultiController";
@@ -116,6 +117,12 @@ export interface ISetting {
 }
 
 export const SETTINGS: {[setting: string]: ISetting} = {
+    "feature_latex_maths": {
+        isFeature: true,
+        displayName: _td("Render LaTeX maths in messages"),
+        supportedLevels: LEVELS_FEATURE,
+        default: false,
+    },
     "feature_communities_v2_prototypes": {
         isFeature: true,
         displayName: _td(
@@ -324,6 +331,16 @@ export const SETTINGS: {[setting: string]: ISetting} = {
         displayName: _td("Show typing notifications"),
         default: true,
     },
+    "ctrlFForSearch": {
+        supportedLevels: LEVELS_ACCOUNT_SETTINGS,
+        displayName: isMac ? _td("Use Command + F to search") : _td("Use Ctrl + F to search"),
+        default: false,
+    },
+    "MessageComposerInput.ctrlEnterToSend": {
+        supportedLevels: LEVELS_ACCOUNT_SETTINGS,
+        displayName: isMac ? _td("Use Command + Enter to send a message") : _td("Use Ctrl + Enter to send a message"),
+        default: false,
+    },
     "MessageComposerInput.autoReplaceEmoji": {
         supportedLevels: LEVELS_ACCOUNT_SETTINGS,
         displayName: _td('Automatically replace plain text Emoji'),
@@ -409,7 +426,8 @@ export const SETTINGS: {[setting: string]: ISetting} = {
         default: true,
     },
     "allowedWidgets": {
-        supportedLevels: [SettingLevel.ROOM_ACCOUNT],
+        supportedLevels: [SettingLevel.ROOM_ACCOUNT, SettingLevel.ROOM_DEVICE],
+        supportedLevelsAreOrdered: true,
         default: {}, // none allowed
     },
     "analyticsOptIn": {
@@ -552,13 +570,6 @@ export const SETTINGS: {[setting: string]: ISetting} = {
         // This is a tri-state value, where `null` means "prompt the user".
         default: null,
     },
-    "sendReadReceipts": {
-        supportedLevels: LEVELS_ROOM_SETTINGS,
-        displayName: _td(
-            "Send read receipts for messages (requires compatible homeserver to disable)",
-        ),
-        default: true,
-    },
     "showImages": {
         supportedLevels: LEVELS_ACCOUNT_SETTINGS,
         displayName: _td("Show previews/thumbnails for images"),
@@ -622,7 +633,16 @@ export const SETTINGS: {[setting: string]: ISetting} = {
         displayName: _td("Enable experimental, compact IRC style layout"),
         default: false,
     },
-    "Widgets.pinned": {
+    "showChatEffects": {
+        supportedLevels: LEVELS_ACCOUNT_SETTINGS,
+        displayName: _td("Show chat effects"),
+        default: true,
+    },
+    "Widgets.pinned": { // deprecated
+        supportedLevels: LEVELS_ROOM_OR_ACCOUNT,
+        default: {},
+    },
+    "Widgets.layout": {
         supportedLevels: LEVELS_ROOM_OR_ACCOUNT,
         default: {},
     },

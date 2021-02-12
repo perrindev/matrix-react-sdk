@@ -34,6 +34,7 @@ import { MarkedExecution } from "../../utils/MarkedExecution";
 import { AsyncStoreWithClient } from "../AsyncStoreWithClient";
 import { NameFilterCondition } from "./filters/NameFilterCondition";
 import { RoomNotificationStateStore } from "../notifications/RoomNotificationStateStore";
+import { VisibilityProvider } from "./filters/VisibilityProvider";
 
 interface IState {
     tagsEnabled?: boolean;
@@ -88,10 +89,6 @@ export class RoomListStoreClass extends AsyncStoreWithClient<IState> {
         return this.algorithm.getOrderedRooms();
     }
 
-    public get matrixClient(): MatrixClient {
-        return super.matrixClient;
-    }
-
     // Intended for test usage
     public async resetStore() {
         await this.reset();
@@ -113,7 +110,7 @@ export class RoomListStoreClass extends AsyncStoreWithClient<IState> {
     // Public for test usage. Do not call this.
     public async makeReady(forcedClient?: MatrixClient) {
         if (forcedClient) {
-            super.matrixClient = forcedClient;
+            this.readyStore.useUnitTestClient(forcedClient);
         }
 
         this.checkLoggingEnabled();
@@ -401,6 +398,10 @@ export class RoomListStoreClass extends AsyncStoreWithClient<IState> {
     }
 
     private async handleRoomUpdate(room: Room, cause: RoomUpdateCause): Promise<any> {
+        if (!VisibilityProvider.instance.isRoomVisible(room)) {
+            return; // don't do anything on rooms that aren't visible
+        }
+
         const shouldUpdate = await this.algorithm.handleRoomUpdate(room, cause);
         if (shouldUpdate) {
             if (SettingsStore.getValue("advancedRoomListLogging")) {
@@ -544,7 +545,8 @@ export class RoomListStoreClass extends AsyncStoreWithClient<IState> {
     public async regenerateAllLists({trigger = true}) {
         console.warn("Regenerating all room lists");
 
-        const rooms = this.matrixClient.getVisibleRooms();
+        const rooms = this.matrixClient.getVisibleRooms()
+            .filter(r => VisibilityProvider.instance.isRoomVisible(r));
         const customTags = new Set<TagID>();
         if (this.state.tagsEnabled) {
             for (const room of rooms) {

@@ -36,6 +36,7 @@ import {Analytics} from "../Analytics";
 import CountlyAnalytics from "../CountlyAnalytics";
 import UserActivity from "../UserActivity";
 import {ModalWidgetStore} from "../stores/ModalWidgetStore";
+import { WidgetLayoutStore } from "../stores/widgets/WidgetLayoutStore";
 
 declare global {
     interface Window {
@@ -59,6 +60,7 @@ declare global {
         mxNotifier: typeof Notifier;
         mxRightPanelStore: RightPanelStore;
         mxWidgetStore: WidgetStore;
+        mxWidgetLayoutStore: WidgetLayoutStore;
         mxCallHandler: CallHandler;
         mxAnalytics: Analytics;
         mxCountlyAnalytics: typeof CountlyAnalytics;
@@ -69,6 +71,13 @@ declare global {
     interface Document {
         // https://developer.mozilla.org/en-US/docs/Web/API/Document/hasStorageAccess
         hasStorageAccess?: () => Promise<boolean>;
+
+        // Safari & IE11 only have this prefixed: we used prefixed versions
+        // previously so let's continue to support them for now
+        webkitExitFullscreen(): Promise<void>;
+        msExitFullscreen(): Promise<void>;
+        readonly webkitFullscreenElement: Element | null;
+        readonly msFullscreenElement: Element | null;
     }
 
     interface Navigator {
@@ -97,6 +106,13 @@ declare global {
 
     interface HTMLAudioElement {
         type?: string;
+    }
+
+    interface Element {
+        // Safari & IE11 only have this prefixed: we used prefixed versions
+        // previously so let's continue to support them for now
+        webkitRequestFullScreen(options?: FullscreenOptions): Promise<void>;
+        msRequestFullscreen(options?: FullscreenOptions): Promise<void>;
     }
 
     interface Error {

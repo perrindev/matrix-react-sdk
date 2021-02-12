@@ -34,7 +34,6 @@ import { DecryptionFailureTracker } from "../../DecryptionFailureTracker";
 import { MatrixClientPeg, IMatrixClientCreds } from "../../MatrixClientPeg";
 import PlatformPeg from "../../PlatformPeg";
 import SdkConfig from "../../SdkConfig";
-import * as RoomListSorter from "../../RoomListSorter";
 import dis from "../../dispatcher/dispatcher";
 import Notifier from '../../Notifier';
 
@@ -48,7 +47,6 @@ import * as Lifecycle from '../../Lifecycle';
 // LifecycleStore is not used but does listen to and dispatch actions
 import '../../stores/LifecycleStore';
 import PageTypes from '../../PageTypes';
-import { getHomePageUrl } from '../../utils/pages';
 
 import createRoom from "../../createRoom";
 import {_t, _td, getCurrentLanguage} from '../../languageHandler';
@@ -62,7 +60,7 @@ import DMRoomMap from '../../utils/DMRoomMap';
 import ThemeWatcher from "../../settings/watchers/ThemeWatcher";
 import { FontWatcher } from '../../settings/watchers/FontWatcher';
 import { storeRoomAliasInCache } from '../../RoomAliasCache';
-import { defer, IDeferred } from "../../utils/promise";
+import { defer, IDeferred, sleep } from "../../utils/promise";
 import ToastStore from "../../stores/ToastStore";
 import * as StorageManager from "../../utils/StorageManager";
 import type LoggedInViewType from "./LoggedInView";
@@ -82,42 +80,43 @@ import CreateCommunityPrototypeDialog from "../views/dialogs/CreateCommunityProt
 import ThreepidInviteStore, { IThreepidInvite, IThreepidInviteWireFormat } from "../../stores/ThreepidInviteStore";
 import {UIFeature} from "../../settings/UIFeature";
 import { CommunityPrototypeStore } from "../../stores/CommunityPrototypeStore";
+import DialPadModal from "../views/voip/DialPadModal";
+import { showToast as showMobileGuideToast } from '../../toasts/MobileGuideToast';
 
 /** constants for MatrixChat.state.view */
 export enum Views {
     // a special initial state which is only used at startup, while we are
     // trying to re-animate a matrix client or register as a guest.
-    LOADING = 0,
+    LOADING,
 
     // we are showing the welcome view
-    WELCOME = 1,
+    WELCOME,
 
     // we are showing the login view
-    LOGIN = 2,
+    LOGIN,
 
     // we are showing the registration view
-    REGISTER = 3,
-
-    // completing the registration flow
-    POST_REGISTRATION = 4,
+    REGISTER,
 
     // showing the 'forgot password' view
-    FORGOT_PASSWORD = 5,
+    FORGOT_PASSWORD,
 
     // showing flow to trust this new device with cross-signing
-    COMPLETE_SECURITY = 6,
+    COMPLETE_SECURITY,
 
     // flow to setup SSSS / cross-signing on this account
-    E2E_SETUP = 7,
+    E2E_SETUP,
 
     // we are logged in with an active matrix client. The logged_in state also
     // includes guests users as they too are logged in at the client level.
-    LOGGED_IN = 8,
+    LOGGED_IN,
 
     // We are logged out (invalid token) but have our local state again. The user
     // should log back in to rehydrate the client.
-    SOFT_LOGOUT = 9,
+    SOFT_LOGOUT,
 }
+
+const AUTH_SCREENS = ["register", "login", "forgot_password", "start_sso", "start_cas"];
 
 // Actions that are redirected through the onboarding process prior to being
 // re-dispatched. NOTE: some actions are non-trivial and would require
@@ -201,6 +200,7 @@ interface IState {
     roomOobData?: object;
     viaServers?: string[];
     pendingInitialSync?: boolean;
+    justRegistered?: boolean;
 }
 
 export default class MatrixChat extends React.PureComponent<IProps, IState> {
@@ -219,6 +219,7 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
     private screenAfterLogin?: IScreen;
     private windowWidth: number;
     private pageChanging: boolean;
+    private tokenLogin?: boolean;
     private accountPassword?: string;
     private accountPasswordTimer?: NodeJS.Timeout;
     private focusComposer: boolean;
@@ -324,13 +325,21 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
             Lifecycle.attemptTokenLogin(
                 this.props.realQueryParams,
                 this.props.defaultDeviceDisplayName,
-            ).then((loggedIn) => {
-                if (loggedIn) {
+                this.getFragmentAfterLogin(),
+            ).then(async (loggedIn) => {
+                if (this.props.realQueryParams?.loginToken) {
+                    // remove the loginToken from the URL regardless
                     this.props.onTokenLoginCompleted();
+                }
 
-                    // don't do anything else until the page reloads - just stay in
-                    // the 'loading' state.
-                    return;
+                if (loggedIn) {
+                    this.tokenLogin = true;
+
+                    // Create and start the client
+                    await Lifecycle.restoreFromLocalStorage({
+                        ignoreGuest: true,
+                    });
+                    return this.postLoginSetup();
                 }
 
                 // if the user has followed a login or register link, don't reanimate
@@ -352,6 +361,42 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
             Analytics.enable();
         }
         CountlyAnalytics.instance.enable(/* anonymous = */ true);
+    }
+
+    private async postLoginSetup() {
+        const cli = MatrixClientPeg.get();
+        const cryptoEnabled = cli.isCryptoEnabled();
+        if (!cryptoEnabled) {
+            this.onLoggedIn();
+        }
+
+        const promisesList = [this.firstSyncPromise.promise];
+        if (cryptoEnabled) {
+            // wait for the client to finish downloading cross-signing keys for us so we
+            // know whether or not we have keys set up on this account
+            promisesList.push(cli.downloadKeys([cli.getUserId()]));
+        }
+
+        // Now update the state to say we're waiting for the first sync to complete rather
+        // than for the login to finish.
+        this.setState({ pendingInitialSync: true });
+
+        await Promise.all(promisesList);
+
+        if (!cryptoEnabled) {
+            this.setState({ pendingInitialSync: false });
+            return;
+        }
+
+        const crossSigningIsSetUp = cli.getStoredCrossSigningForUser(cli.getUserId());
+        if (crossSigningIsSetUp) {
+            this.setStateForNewView({ view: Views.COMPLETE_SECURITY });
+        } else if (await cli.doesServerSupportUnstableFeature("org.matrix.e2e_cross_signing")) {
+            this.setStateForNewView({ view: Views.E2E_SETUP });
+        } else {
+            this.onLoggedIn();
+        }
+        this.setState({ pendingInitialSync: false });
     }
 
     // TODO: [REACT-WARNING] Replace with appropriate lifecycle stage
@@ -479,6 +524,7 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
         }
         const newState = {
             currentUserId: null,
+            justRegistered: false,
         };
         Object.assign(newState, state);
         this.setState(newState);
@@ -560,11 +606,6 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                 ThemeController.isLogin = true;
                 this.themeWatcher.recheck();
                 break;
-            case 'start_post_registration':
-                this.setState({
-                    view: Views.POST_REGISTRATION,
-                });
-                break;
             case 'start_password_recovery':
                 this.setStateForNewView({
                     view: Views.FORGOT_PASSWORD,
@@ -595,7 +636,7 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                             MatrixClientPeg.get().leave(payload.room_id).then(() => {
                                 modal.close();
                                 if (this.state.currentRoomId === payload.room_id) {
-                                    dis.dispatch({action: 'view_next_room'});
+                                    dis.dispatch({action: 'view_home_page'});
                                 }
                             }, (err) => {
                                 modal.close();
@@ -624,9 +665,6 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                 }
                 break;
             }
-            case 'view_next_room':
-                this.viewNextRoom(1);
-                break;
             case Action.ViewUserSettings: {
                 const tabPayload = payload as OpenToTabPayload;
                 const UserSettingsDialog = sdk.getComponent("dialogs.UserSettingsDialog");
@@ -651,8 +689,9 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
             }
             case Action.ViewRoomDirectory: {
                 const RoomDirectory = sdk.getComponent("structures.RoomDirectory");
-                Modal.createTrackedDialog('Room directory', '', RoomDirectory, {},
-                    'mx_RoomDirectory_dialogWrapper', false, true);
+                Modal.createTrackedDialog('Room directory', '', RoomDirectory, {
+                    initialText: payload.initialText,
+                }, 'mx_RoomDirectory_dialogWrapper', false, true);
 
                 // View the welcome or home page if we need something to look at
                 this.viewSomethingBehindModal();
@@ -669,13 +708,13 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                 this.viewWelcome();
                 break;
             case 'view_home_page':
-                this.viewHome();
+                this.viewHome(payload.justRegistered);
                 break;
             case 'view_start_chat_or_reuse':
                 this.chatCreateOrReuse(payload.user_id);
                 break;
             case 'view_create_chat':
-                showStartChatInviteDialog();
+                showStartChatInviteDialog(payload.initialText || "");
                 break;
             case 'view_invite':
                 showRoomInviteDialog(payload.roomId);
@@ -710,6 +749,9 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                 }, () => {
                     this.state.resizeNotifier.notifyLeftHandleResized();
                 });
+                break;
+            case Action.OpenDialPad:
+                Modal.createTrackedDialog('Dial pad', '', DialPadModal, {}, "mx_Dialog_dialPadWrapper");
                 break;
             case 'on_logged_in':
                 if (
@@ -803,35 +845,6 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
         ThemeController.isLogin = true;
         this.themeWatcher.recheck();
         this.notifyNewScreen('register');
-    }
-
-    // TODO: Move to RoomViewStore
-    private viewNextRoom(roomIndexDelta: number) {
-        const allRooms = RoomListSorter.mostRecentActivityFirst(
-            MatrixClientPeg.get().getRooms(),
-        );
-        // If there are 0 rooms or 1 room, view the home page because otherwise
-        // if there are 0, we end up trying to index into an empty array, and
-        // if there is 1, we end up viewing the same room.
-        if (allRooms.length < 2) {
-            dis.dispatch({
-                action: 'view_home_page',
-            });
-            return;
-        }
-        let roomIndex = -1;
-        for (let i = 0; i < allRooms.length; ++i) {
-            if (allRooms[i].roomId === this.state.currentRoomId) {
-                roomIndex = i;
-                break;
-            }
-        }
-        roomIndex = (roomIndex + roomIndexDelta) % allRooms.length;
-        if (roomIndex < 0) roomIndex = allRooms.length - 1;
-        dis.dispatch({
-            action: 'view_room',
-            room_id: allRooms[roomIndex].roomId,
-        });
     }
 
     // switch view to the given room
@@ -953,10 +966,11 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
         this.themeWatcher.recheck();
     }
 
-    private viewHome() {
+    private viewHome(justRegistered = false) {
         // The home page requires the "logged in" view, so we'll set that.
         this.setStateForNewView({
             view: Views.LOGGED_IN,
+            justRegistered,
         });
         this.setPage(PageTypes.HomePage);
         this.notifyNewScreen('home');
@@ -1099,9 +1113,9 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
 
     private forgetRoom(roomId: string) {
         MatrixClientPeg.get().forget(roomId).then(() => {
-            // Switch to another room view if we're currently viewing the historical room
+            // Switch to home page if we're currently viewing the forgotten room
             if (this.state.currentRoomId === roomId) {
-                dis.dispatch({ action: "view_next_room" });
+                dis.dispatch({ action: "view_home_page" });
             }
         }).catch((err) => {
             const errCode = err.errcode || _td("unknown error code");
@@ -1190,7 +1204,7 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                 if (welcomeUserRoom === null) {
                     // We didn't redirect to the welcome user room, so show
                     // the homepage.
-                    dis.dispatch({action: 'view_home_page'});
+                    dis.dispatch({action: 'view_home_page', justRegistered: true});
                 }
             } else if (ThreepidInviteStore.instance.pickBestInvite()) {
                 // The user has a 3pid invite pending - show them that
@@ -1203,7 +1217,7 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
             } else {
                 // The user has just logged in after registering,
                 // so show the homepage.
-                dis.dispatch({action: 'view_home_page'});
+                dis.dispatch({action: 'view_home_page', justRegistered: true});
             }
         } else {
             this.showScreenAfterLogin();
@@ -1211,10 +1225,17 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
 
         StorageManager.tryPersistStorage();
 
+        // defer the following actions by 30 seconds to not throw them at the user immediately
+        await sleep(30);
         if (SettingsStore.getValue("showCookieBar") &&
             (Analytics.canEnable() || CountlyAnalytics.instance.canEnable())
         ) {
             showAnalyticsToast(this.props.config.piwik?.policyUrl);
+        }
+        if (SdkConfig.get().mobileGuideToast) {
+            // The toast contains further logic to detect mobile platforms,
+            // check if it has been dismissed before, etc.
+            showMobileGuideToast();
         }
     }
 
@@ -1233,12 +1254,8 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
         } else {
             if (MatrixClientPeg.get().isGuest()) {
                 dis.dispatch({action: 'view_welcome_page'});
-            } else if (getHomePageUrl(this.props.config)) {
-                dis.dispatch({action: 'view_home_page'});
             } else {
-                this.firstSyncPromise.promise.then(() => {
-                    dis.dispatch({action: 'view_next_room'});
-                });
+                dis.dispatch({action: 'view_home_page'});
             }
         }
     }
@@ -1343,8 +1360,8 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
             this.firstSyncComplete = true;
             this.firstSyncPromise.resolve();
 
-            if (Notifier.shouldShowPrompt()) {
-                showNotificationsToast();
+            if (Notifier.shouldShowPrompt() && !MatrixClientPeg.userRegisteredWithinLastHours(24)) {
+                showNotificationsToast(false);
             }
 
             dis.fire(Action.FocusComposer);
@@ -1352,18 +1369,6 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                 ready: true,
             });
         });
-
-        if (SettingsStore.getValue(UIFeature.Voip)) {
-            cli.on('Call.incoming', function(call) {
-                // we dispatch this synchronously to make sure that the event
-                // handlers on the call are set up immediately (so that if
-                // we get an immediate hangup, we don't get a stuck call)
-                dis.dispatch({
-                    action: 'incoming_call',
-                    call: call,
-                }, true);
-            });
-        }
 
         cli.on('Session.logged_out', function(errObj) {
             if (Lifecycle.isLoggingOut()) return;
@@ -1549,6 +1554,14 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
     }
 
     showScreen(screen: string, params?: {[key: string]: any}) {
+        const cli = MatrixClientPeg.get();
+        const isLoggedOutOrGuest = !cli || cli.isGuest();
+        if (!isLoggedOutOrGuest && AUTH_SCREENS.includes(screen)) {
+            // user is logged in and landing on an auth page which will uproot their session, redirect them home instead
+            dis.dispatch({ action: "view_home_page" });
+            return;
+        }
+
         if (screen === 'register') {
             dis.dispatch({
                 action: 'start_registration',
@@ -1565,7 +1578,7 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                 params: params,
             });
         } else if (screen === 'soft_logout') {
-            if (MatrixClientPeg.get() && MatrixClientPeg.get().getUserId() && !Lifecycle.isSoftLogout()) {
+            if (cli.getUserId() && !Lifecycle.isSoftLogout()) {
                 // Logged in - visit a room
                 this.viewLastRoom();
             } else {
@@ -1615,14 +1628,6 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
         } else if (screen === 'groups') {
             dis.dispatch({
                 action: 'view_my_groups',
-            });
-        } else if (screen === 'complete_security') {
-            dis.dispatch({
-                action: 'start_complete_security',
-            });
-        } else if (screen === 'post_registration') {
-            dis.dispatch({
-                action: 'start_post_registration',
             });
         } else if (screen.indexOf('room/') === 0) {
             // Rooms can have the following formats:
@@ -1794,14 +1799,6 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
         return Lifecycle.setLoggedIn(credentials);
     }
 
-    onFinishPostRegistration = () => {
-        // Don't confuse this with "PageType" which is the middle window to show
-        this.setState({
-            view: Views.LOGGED_IN,
-        });
-        this.showScreen("settings");
-    };
-
     onSendEvent(roomId: string, event: MatrixEvent) {
         const cli = MatrixClientPeg.get();
         if (!cli) {
@@ -1887,40 +1884,7 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
 
         // Create and start the client
         await Lifecycle.setLoggedIn(credentials);
-
-        const cli = MatrixClientPeg.get();
-        const cryptoEnabled = cli.isCryptoEnabled();
-        if (!cryptoEnabled) {
-            this.onLoggedIn();
-        }
-
-        const promisesList = [this.firstSyncPromise.promise];
-        if (cryptoEnabled) {
-            // wait for the client to finish downloading cross-signing keys for us so we
-            // know whether or not we have keys set up on this account
-            promisesList.push(cli.downloadKeys([cli.getUserId()]));
-        }
-
-        // Now update the state to say we're waiting for the first sync to complete rather
-        // than for the login to finish.
-        this.setState({ pendingInitialSync: true });
-
-        await Promise.all(promisesList);
-
-        if (!cryptoEnabled) {
-            this.setState({ pendingInitialSync: false });
-            return;
-        }
-
-        const crossSigningIsSetUp = cli.getStoredCrossSigningForUser(cli.getUserId());
-        if (crossSigningIsSetUp) {
-            this.setStateForNewView({ view: Views.COMPLETE_SECURITY });
-        } else if (await cli.doesServerSupportUnstableFeature("org.matrix.e2e_cross_signing")) {
-            this.setStateForNewView({ view: Views.E2E_SETUP });
-        } else {
-            this.onLoggedIn();
-        }
-        this.setState({ pendingInitialSync: false });
+        await this.postLoginSetup();
     };
 
     // complete security / e2e setup has finished
@@ -1964,14 +1928,8 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                 <E2eSetup
                     onFinished={this.onCompleteSecurityE2eSetupFinished}
                     accountPassword={this.accountPassword}
+                    tokenLogin={!!this.tokenLogin}
                 />
-            );
-        } else if (this.state.view === Views.POST_REGISTRATION) {
-            // needs to be before normal PageTypes as you are logged in technically
-            const PostRegistration = sdk.getComponent('structures.auth.PostRegistration');
-            view = (
-                <PostRegistration
-                    onComplete={this.onFinishPostRegistration} />
             );
         } else if (this.state.view === Views.LOGGED_IN) {
             // store errors stop the client syncing and require user intervention, so we'll
@@ -2036,6 +1994,7 @@ export default class MatrixChat extends React.PureComponent<IProps, IState> {
                     onLoginClick={this.onLoginClick}
                     onServerConfigChange={this.onServerConfigChange}
                     defaultDeviceDisplayName={this.props.defaultDeviceDisplayName}
+                    fragmentAfterLogin={fragmentAfterLogin}
                     {...this.getServerProperties()}
                 />
             );

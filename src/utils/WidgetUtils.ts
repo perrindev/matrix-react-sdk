@@ -22,14 +22,13 @@ import SdkConfig from "../SdkConfig";
 import dis from '../dispatcher/dispatcher';
 import WidgetEchoStore from '../stores/WidgetEchoStore';
 import SettingsStore from "../settings/SettingsStore";
-import ActiveWidgetStore from "../stores/ActiveWidgetStore";
 import {IntegrationManagers} from "../integrations/IntegrationManagers";
 import {Room} from "matrix-js-sdk/src/models/room";
 import {WidgetType} from "../widgets/WidgetType";
 import {objectClone} from "./objects";
 import {_t} from "../languageHandler";
-import {Capability, IWidgetData, MatrixCapabilities} from "matrix-widget-api";
-import {IApp} from "../stores/WidgetStore"; // TODO @@
+import {Capability, IWidget, IWidgetData, MatrixCapabilities} from "matrix-widget-api";
+import {IApp} from "../stores/WidgetStore";
 
 // How long we wait for the state event echo to come back from the server
 // before waitFor[Room/User]Widget rejects its promise
@@ -298,6 +297,16 @@ export default class WidgetUtils {
             content = {};
         }
 
+        return WidgetUtils.setRoomWidgetContent(roomId, widgetId, content);
+    }
+
+    static setRoomWidgetContent(
+        roomId: string,
+        widgetId: string,
+        content: IWidget,
+    ) {
+        const addingWidget = !!content.url;
+
         WidgetEchoStore.setRoomWidgetEcho(roomId, widgetId, content);
 
         const client = MatrixClientPeg.get();
@@ -455,27 +464,6 @@ export default class WidgetUtils {
         }
 
         return capWhitelist;
-    }
-
-    static getWidgetSecurityKey(widgetId: string, widgetUrl: string, isUserWidget: boolean): string {
-        let widgetLocation = ActiveWidgetStore.getRoomId(widgetId);
-
-        if (isUserWidget) {
-            const userWidget = WidgetUtils.getUserWidgetsArray()
-                .find((w) => w.id === widgetId && w.content && w.content.url === widgetUrl);
-
-            if (!userWidget) {
-                throw new Error("No matching user widget to form security key");
-            }
-
-            widgetLocation = userWidget.sender;
-        }
-
-        if (!widgetLocation) {
-            throw new Error("Failed to locate where the widget resides");
-        }
-
-        return encodeURIComponent(`${widgetLocation}::${widgetUrl}`);
     }
 
     static getLocalJitsiWrapperUrl(opts: {forLocalRender?: boolean, auth?: string} = {}) {

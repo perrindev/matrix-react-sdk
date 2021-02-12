@@ -23,7 +23,6 @@ import PropTypes from 'prop-types';
 import {MatrixClientPeg} from '../../../MatrixClientPeg';
 import AccessibleButton from './AccessibleButton';
 import { _t } from '../../../languageHandler';
-import * as sdk from '../../../index';
 import AppPermission from './AppPermission';
 import AppWarning from './AppWarning';
 import Spinner from './Spinner';
@@ -34,7 +33,6 @@ import SettingsStore from "../../../settings/SettingsStore";
 import {aboveLeftOf, ContextMenuButton} from "../../structures/ContextMenu";
 import PersistedElement, {getPersistKey} from "./PersistedElement";
 import {WidgetType} from "../../../widgets/WidgetType";
-import {SettingLevel} from "../../../settings/SettingLevel";
 import {StopGapWidget} from "../../../stores/widgets/StopGapWidget";
 import {ElementWidgetActions} from "../../../stores/widgets/ElementWidgetActions";
 import {MatrixCapabilities} from "matrix-widget-api";
@@ -241,7 +239,8 @@ export default class AppTile extends React.Component {
         console.info("Granting permission for widget to load: " + this.props.app.eventId);
         const current = SettingsStore.getValue("allowedWidgets", roomId);
         current[this.props.app.eventId] = true;
-        SettingsStore.setValue("allowedWidgets", roomId, SettingLevel.ROOM_ACCOUNT, current).then(() => {
+        const level = SettingsStore.firstSupportedLevel("allowedWidgets");
+        SettingsStore.setValue("allowedWidgets", roomId, level, current).then(() => {
             this.setState({hasPermissionToLoad: true});
 
             // Fetch a token for the integration manager, now that we're allowed to
@@ -375,11 +374,13 @@ export default class AppTile extends React.Component {
                         />
                     </div>
                 );
-                // if the widget would be allowed to remain on screen, we must put it in
-                // a PersistedElement from the get-go, otherwise the iframe will be
-                // re-mounted later when we do.
-                if (this.props.whitelistCapabilities.includes('m.always_on_screen')) {
-                    const PersistedElement = sdk.getComponent("elements.PersistedElement");
+
+                if (!this.props.userWidget) {
+                    // All room widgets can theoretically be allowed to remain on screen, so we
+                    // wrap them all in a PersistedElement from the get-go. If we wait, the iframe
+                    // will be re-mounted later, which means the widget has to start over, which is
+                    // bad.
+
                     // Also wrap the PersistedElement in a div to fix the height, otherwise
                     // AppTile's border is in the wrong place
                     appTileBody = <div className="mx_AppTile_persistedWrapper">
@@ -474,10 +475,6 @@ AppTile.propTypes = {
     handleMinimisePointerEvents: PropTypes.bool,
     // Optionally hide the popout widget icon
     showPopout: PropTypes.bool,
-    // Widget capabilities to allow by default (without user confirmation)
-    // NOTE -- Use with caution. This is intended to aid better integration / UX
-    // basic widget capabilities, e.g. injecting sticker message events.
-    whitelistCapabilities: PropTypes.array,
     // Is this an instance of a user widget
     userWidget: PropTypes.bool,
 };
@@ -488,7 +485,6 @@ AppTile.defaultProps = {
     showTitle: true,
     showPopout: true,
     handleMinimisePointerEvents: false,
-    whitelistCapabilities: [],
     userWidget: false,
     miniMode: false,
 };
