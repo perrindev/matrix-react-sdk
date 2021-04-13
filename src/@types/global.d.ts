@@ -37,6 +37,9 @@ import CountlyAnalytics from "../CountlyAnalytics";
 import UserActivity from "../UserActivity";
 import {ModalWidgetStore} from "../stores/ModalWidgetStore";
 import { WidgetLayoutStore } from "../stores/widgets/WidgetLayoutStore";
+import VoipUserMapper from "../VoipUserMapper";
+import {SpaceStoreClass} from "../stores/SpaceStore";
+import {VoiceRecorder} from "../voice/VoiceRecorder";
 
 declare global {
     interface Window {
@@ -66,6 +69,9 @@ declare global {
         mxCountlyAnalytics: typeof CountlyAnalytics;
         mxUserActivity: UserActivity;
         mxModalWidgetStore: ModalWidgetStore;
+        mxVoipUserMapper: VoipUserMapper;
+        mxSpaceStore: SpaceStoreClass;
+        mxVoiceRecorder: typeof VoiceRecorder;
     }
 
     interface Document {

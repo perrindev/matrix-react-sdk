@@ -51,6 +51,7 @@ import IconizedContextMenu, {
     IconizedContextMenuRadio,
 } from "../context_menus/IconizedContextMenu";
 import { CommunityPrototypeStore, IRoomProfile } from "../../../stores/CommunityPrototypeStore";
+import {replaceableComponent} from "../../../utils/replaceableComponent";
 
 interface IProps {
     room: Room;
@@ -78,6 +79,7 @@ const contextMenuBelow = (elementRect: PartialDOMRect) => {
     return {left, top, chevronFace};
 };
 
+@replaceableComponent("views.rooms.RoomTile")
 export default class RoomTile extends React.PureComponent<IProps, IState> {
     private dispatcherRef: string;
     private roomTileRef = createRef<HTMLDivElement>();
@@ -110,6 +112,11 @@ export default class RoomTile extends React.PureComponent<IProps, IState> {
             CommunityPrototypeStore.getUpdateEventName(this.props.room.roomId),
             this.onCommunityUpdate,
         );
+        this.props.room.on("Room.name", this.onRoomNameUpdate);
+    }
+
+    private onRoomNameUpdate = (room) => {
+        this.forceUpdate();
     }
 
     private onNotificationUpdate = () => {
@@ -150,6 +157,8 @@ export default class RoomTile extends React.PureComponent<IProps, IState> {
                 CommunityPrototypeStore.getUpdateEventName(this.props.room?.roomId),
                 this.onCommunityUpdate,
             );
+            prevProps.room?.off("Room.name", this.onRoomNameUpdate);
+            this.props.room?.on("Room.name", this.onRoomNameUpdate);
         }
     }
 
@@ -171,6 +180,7 @@ export default class RoomTile extends React.PureComponent<IProps, IState> {
                 CommunityPrototypeStore.getUpdateEventName(this.props.room.roomId),
                 this.onCommunityUpdate,
             );
+            this.props.room.off("Room.name", this.onRoomNameUpdate);
         }
         defaultDispatcher.unregister(this.dispatcherRef);
         this.notificationState.off(NOTIFICATION_STATE_UPDATE, this.onNotificationUpdate);
@@ -323,6 +333,17 @@ export default class RoomTile extends React.PureComponent<IProps, IState> {
         this.setState({generalMenuPosition: null}); // hide the menu
     };
 
+    private onInviteClick = (ev: ButtonEvent) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        dis.dispatch({
+            action: 'view_invite',
+            roomId: this.props.room.roomId,
+        });
+        this.setState({generalMenuPosition: null}); // hide the menu
+    };
+
     private async saveNotifState(ev: ButtonEvent, newState: Volume) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -443,6 +464,8 @@ export default class RoomTile extends React.PureComponent<IProps, IState> {
             const isLowPriority = roomTags.includes(DefaultTagID.LowPriority);
             const lowPriorityLabel = _t("Low Priority");
 
+            const userId = MatrixClientPeg.get().getUserId();
+            const canInvite = this.props.room.canInvite(userId);
             contextMenu = <IconizedContextMenu
                 {...contextMenuBelow(this.state.generalMenuPosition)}
                 onFinished={this.onCloseGeneralMenu}
@@ -462,7 +485,13 @@ export default class RoomTile extends React.PureComponent<IProps, IState> {
                         label={lowPriorityLabel}
                         iconClassName="mx_RoomTile_iconArrowDown"
                     />
-
+                    {canInvite ? (
+                        <IconizedContextMenuOption
+                            onClick={this.onInviteClick}
+                            label={_t("Invite People")}
+                            iconClassName="mx_RoomTile_iconInvite"
+                        />
+                    ) : null}
                     <IconizedContextMenuOption
                         onClick={this.onOpenRoomSettings}
                         label={_t("Settings")}
